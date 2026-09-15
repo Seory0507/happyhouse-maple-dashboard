@@ -21,8 +21,109 @@ st.set_page_config(
     layout="wide",
 )
 
-SHEET_URL = os.getenv("SHEET_URL")
-SHEET_NAME = os.getenv("SHEET_NAME", "캐릭터목록")
+
+# =========================================================
+# 설정값 읽기
+# 로컬: .env
+# 배포: Streamlit Secrets
+# =========================================================
+def get_config(key, default=""):
+    # Streamlit Secrets 우선
+    try:
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+
+    # 없으면 .env 사용
+    return os.getenv(key, default)
+
+
+SHEET_URL = get_config("SHEET_URL")
+SHEET_NAME = get_config("SHEET_NAME", "캐릭터목록")
+APP_PASSWORD = get_config("APP_PASSWORD")
+
+
+# =========================================================
+# 비밀번호 인증
+# =========================================================
+def check_password():
+    if "password_ok" not in st.session_state:
+        st.session_state.password_ok = False
+
+    if st.session_state.password_ok:
+        return True
+
+    # 로그인 화면 CSS
+    st.markdown(
+        """
+<style>
+
+.stApp {
+    background:
+        radial-gradient(
+            circle at top,
+            #162032 0%,
+            #0c111a 42%,
+            #080c13 100%
+        );
+}
+
+.block-container {
+    max-width: 520px;
+    padding-top: 10rem;
+}
+
+.login-title {
+    text-align: center;
+    color: #f4f7ff;
+    font-size: 2rem;
+    font-weight: 900;
+    margin-bottom: 2rem;
+}
+
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="login-title">'
+        '🍁 해피하우스 캐릭터 목록'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    password = st.text_input(
+        "비밀번호",
+        type="password",
+        placeholder="비밀번호를 입력하세요"
+    )
+
+    if st.button(
+        "입장",
+        use_container_width=True
+    ):
+        if not APP_PASSWORD:
+            st.error(
+                "앱 비밀번호가 설정되어 있지 않습니다."
+            )
+
+        elif password == APP_PASSWORD:
+            st.session_state.password_ok = True
+            st.rerun()
+
+        else:
+            st.error(
+                "비밀번호가 틀렸습니다."
+            )
+
+    return False
+
+
+# 비밀번호를 통과하기 전에는 아래 앱을 실행하지 않음
+if not check_password():
+    st.stop()
 
 
 # =========================================================
@@ -47,11 +148,19 @@ def get_drive_file_id(url):
 
     url = str(url).strip()
 
-    match = re.search(r"/file/d/([^/]+)", url)
+    match = re.search(
+        r"/file/d/([^/]+)",
+        url
+    )
+
     if match:
         return match.group(1)
 
-    match = re.search(r"[?&]id=([^&]+)", url)
+    match = re.search(
+        r"[?&]id=([^&]+)",
+        url
+    )
+
     if match:
         return match.group(1)
 
@@ -97,7 +206,10 @@ def load_image_base64(url):
             response.content
         ).decode("utf-8")
 
-        return f"data:{content_type};base64,{encoded}"
+        return (
+            f"data:{content_type};"
+            f"base64,{encoded}"
+        )
 
     except Exception:
         return ""
@@ -108,19 +220,28 @@ def load_image_base64(url):
 # =========================================================
 @st.cache_data(ttl=60)
 def load_character_data():
-    sheet_id = get_sheet_id(SHEET_URL)
+    sheet_id = get_sheet_id(
+        SHEET_URL
+    )
 
     if not sheet_id:
-        raise ValueError("구글 시트 주소를 확인해주세요.")
+        raise ValueError(
+            "구글 시트 주소를 확인해주세요."
+        )
 
     csv_url = (
-        f"https://docs.google.com/spreadsheets/d/"
-        f"{sheet_id}/gviz/tq"
+        f"https://docs.google.com/"
+        f"spreadsheets/d/{sheet_id}/gviz/tq"
         f"?tqx=out:csv&sheet={quote(SHEET_NAME)}"
     )
 
-    df = pd.read_csv(csv_url)
-    df = df.dropna(how="all")
+    df = pd.read_csv(
+        csv_url
+    )
+
+    df = df.dropna(
+        how="all"
+    )
 
     return df
 
@@ -136,7 +257,9 @@ def clean(value):
 
 
 def esc(value):
-    return html.escape(clean(value))
+    return html.escape(
+        clean(value)
+    )
 
 
 # =========================================================
@@ -146,20 +269,24 @@ def parse_number(value):
     try:
         text = str(value).strip()
         text = text.replace(",", "")
+
         return float(text)
+
     except Exception:
         return None
 
 
 # =========================================================
 # 전투력 표시
-# 예:
+#
 # 267,349,090 -> 2억 6천
 # 186,507,765 -> 1억 8천
 # 98,441,220  -> 9천 8백만
 # =========================================================
 def format_combat_power(value):
-    number = parse_number(value)
+    number = parse_number(
+        value
+    )
 
     if number is None:
         return clean(value)
@@ -167,35 +294,74 @@ def format_combat_power(value):
     number = int(number)
 
     if number >= 100_000_000:
-        eok = number // 100_000_000
-        remainder = number % 100_000_000
+        eok = (
+            number
+            // 100_000_000
+        )
 
-        cheonman = remainder // 10_000_000
+        remainder = (
+            number
+            % 100_000_000
+        )
+
+        cheonman = (
+            remainder
+            // 10_000_000
+        )
 
         if cheonman > 0:
-            return f"{eok}억 {cheonman}천"
+            return (
+                f"{eok}억 "
+                f"{cheonman}천"
+            )
 
         return f"{eok}억"
 
     if number >= 10_000_000:
-        cheonman = number // 10_000_000
-        remainder = number % 10_000_000
+        cheonman = (
+            number
+            // 10_000_000
+        )
 
-        baekman = remainder // 1_000_000
+        remainder = (
+            number
+            % 10_000_000
+        )
+
+        baekman = (
+            remainder
+            // 1_000_000
+        )
 
         if baekman > 0:
-            return f"{cheonman}천 {baekman}백만"
+            return (
+                f"{cheonman}천 "
+                f"{baekman}백만"
+            )
 
         return f"{cheonman}천만"
 
     if number >= 1_000_000:
-        baekman = number // 1_000_000
+        baekman = (
+            number
+            // 1_000_000
+        )
 
-        remainder = number % 1_000_000
-        sibman = remainder // 100_000
+        remainder = (
+            number
+            % 1_000_000
+        )
+
+        sibman = (
+            remainder
+            // 100_000
+        )
 
         if sibman > 0:
-            return f"{baekman}백 {sibman}십만"
+            return (
+                f"{baekman}백 "
+                f"{sibman}십만"
+            )
 
         return f"{baekman}백만"
 
@@ -204,18 +370,22 @@ def format_combat_power(value):
 
 # =========================================================
 # 헥사환산 표시
-# 예:
+#
 # 74,983 -> 7.5만
 # 63,083 -> 6.3만
 # =========================================================
 def format_hexa(value):
-    number = parse_number(value)
+    number = parse_number(
+        value
+    )
 
     if number is None:
         return clean(value)
 
     if number >= 10_000:
-        return f"{number / 10_000:.1f}만"
+        return (
+            f"{number / 10_000:.1f}만"
+        )
 
     return f"{int(number):,}"
 
@@ -231,9 +401,16 @@ def get_stat_url(row):
 
     for col in candidates:
         if col in row.index:
-            value = clean(row.get(col, ""))
+            value = clean(
+                row.get(
+                    col,
+                    ""
+                )
+            )
 
-            if value.startswith("http"):
+            if value.startswith(
+                "http"
+            ):
                 return value
 
     return ""
@@ -244,19 +421,25 @@ def get_stat_url(row):
 # =========================================================
 def rank_badge(rank):
     try:
-        rank_num = int(float(rank))
+        rank_num = int(
+            float(rank)
+        )
+
     except Exception:
         return ""
 
     if rank_num == 1:
         css = "rank-gold"
         icon = "♛"
+
     elif rank_num == 2:
         css = "rank-silver"
         icon = "♛"
+
     elif rank_num == 3:
         css = "rank-bronze"
         icon = "♛"
+
     else:
         css = "rank-normal"
         icon = "♟"
@@ -269,7 +452,7 @@ def rank_badge(rank):
 
 
 # =========================================================
-# CSS
+# 메인 화면 CSS
 # =========================================================
 st.markdown(
     """
@@ -290,6 +473,11 @@ st.markdown(
     padding-top: 4rem;
     padding-bottom: 3rem;
 }
+
+
+/* ------------------------
+   HEADER
+------------------------- */
 
 .site-header {
     display: flex;
@@ -312,6 +500,11 @@ st.markdown(
     color: #f4f7ff;
 }
 
+
+/* ------------------------
+   CARD
+------------------------- */
+
 .character-card {
     background:
         linear-gradient(
@@ -320,15 +513,27 @@ st.markdown(
             rgba(10, 16, 26, 0.98)
         );
 
-    border: 1px solid rgba(132, 161, 204, 0.28);
+    border:
+        1px solid
+        rgba(132, 161, 204, 0.28);
+
     border-radius: 18px;
+
     padding: 18px;
+
     margin-bottom: 18px;
+
     min-height: 310px;
 
     box-shadow:
-        0 12px 28px rgba(0, 0, 0, 0.18);
+        0 12px 28px
+        rgba(0, 0, 0, 0.18);
 }
+
+
+/* ------------------------
+   RANK
+------------------------- */
 
 .card-top {
     display: flex;
@@ -340,183 +545,317 @@ st.markdown(
 .rank-badge {
     display: inline-flex;
     align-items: center;
+
     padding: 5px 11px;
+
     border-radius: 9px;
+
     font-size: 0.93rem;
+
     font-weight: 800;
 }
 
 .rank-gold {
     color: #ffd955;
-    background: rgba(130, 92, 0, 0.28);
-    border: 1px solid rgba(255, 206, 55, 0.6);
+
+    background:
+        rgba(130, 92, 0, 0.28);
+
+    border:
+        1px solid
+        rgba(255, 206, 55, 0.6);
 }
 
 .rank-silver {
     color: #dfe7f7;
-    background: rgba(120, 135, 160, 0.20);
-    border: 1px solid rgba(170, 185, 210, 0.35);
+
+    background:
+        rgba(120, 135, 160, 0.20);
+
+    border:
+        1px solid
+        rgba(170, 185, 210, 0.35);
 }
 
 .rank-bronze {
     color: #ffb487;
-    background: rgba(140, 76, 48, 0.24);
-    border: 1px solid rgba(210, 130, 90, 0.45);
+
+    background:
+        rgba(140, 76, 48, 0.24);
+
+    border:
+        1px solid
+        rgba(210, 130, 90, 0.45);
 }
 
 .rank-normal {
     color: #c9d5e9;
-    background: rgba(80, 98, 125, 0.20);
-    border: 1px solid rgba(140, 160, 190, 0.35);
+
+    background:
+        rgba(80, 98, 125, 0.20);
+
+    border:
+        1px solid
+        rgba(140, 160, 190, 0.35);
 }
+
+
+/* ------------------------
+   MAIN
+------------------------- */
 
 .card-main {
     display: grid;
-    grid-template-columns: 125px minmax(0, 1fr);
+
+    grid-template-columns:
+        125px minmax(0, 1fr);
+
     gap: 18px;
+
     align-items: center;
+
     margin-top: 6px;
 }
 
 .character-image-box {
     display: flex;
+
     align-items: center;
+
     justify-content: center;
+
     height: 150px;
 }
 
 .character-image {
     max-width: 125px;
+
     max-height: 145px;
+
     object-fit: contain;
-    filter: drop-shadow(0 6px 8px rgba(0,0,0,0.45));
+
+    filter:
+        drop-shadow(
+            0 6px 8px
+            rgba(0, 0, 0, 0.45)
+        );
 }
 
 .character-placeholder {
     width: 110px;
+
     height: 110px;
-    border: 1px dashed rgba(180, 190, 210, 0.35);
+
+    border:
+        1px dashed
+        rgba(180, 190, 210, 0.35);
+
     border-radius: 14px;
+
     display: flex;
+
     align-items: center;
+
     justify-content: center;
+
     color: #8996aa;
+
     font-size: 0.8rem;
 }
 
+
+/* ------------------------
+   TEXT
+------------------------- */
+
 .nickname {
     color: #f7f9ff;
+
     font-size: 1.45rem;
+
     font-weight: 900;
+
     margin-bottom: 2px;
 }
 
 .realname {
     color: #adb9cd;
+
     font-size: 0.88rem;
+
     margin-bottom: 10px;
 }
 
+
+/* ------------------------
+   JOB + LEVEL
+------------------------- */
+
 .job-level-row {
     display: flex;
+
     align-items: center;
+
     justify-content: space-between;
+
     gap: 8px;
+
     margin-bottom: 13px;
 }
 
 .job-chip {
     display: inline-block;
+
     padding: 5px 9px;
+
     border-radius: 8px;
-    background: rgba(73, 113, 162, 0.20);
-    border: 1px solid rgba(103, 147, 200, 0.25);
+
+    background:
+        rgba(73, 113, 162, 0.20);
+
+    border:
+        1px solid
+        rgba(103, 147, 200, 0.25);
+
     color: #e7edf8;
+
     font-size: 0.87rem;
+
     font-weight: 700;
 }
 
 .level {
     color: #c9d2e1;
+
     font-size: 0.9rem;
+
     font-weight: 700;
 }
 
+
+/* ------------------------
+   STATS
+------------------------- */
+
 .stats-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+
+    grid-template-columns:
+        1fr 1fr;
+
     gap: 14px;
 }
 
 .stat-box:first-child {
-    border-right: 1px solid rgba(130, 150, 180, 0.18);
+    border-right:
+        1px solid
+        rgba(130, 150, 180, 0.18);
 }
 
 .stat-label {
     color: #8f9cb0;
+
     font-size: 0.77rem;
+
     margin-bottom: 2px;
 }
 
 .stat-value {
     color: #f3f6fd;
+
     font-size: 1.12rem;
+
     font-weight: 800;
 }
 
+
+/* ------------------------
+   TARGET
+------------------------- */
+
 .target-boss {
     margin-top: 15px;
+
     color: #e7edf8;
+
     font-size: 0.89rem;
+
     font-weight: 650;
 }
 
+
+/* ------------------------
+   BUTTONS
+------------------------- */
+
 .card-buttons {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+
+    grid-template-columns:
+        1fr 1fr;
+
     gap: 10px;
+
     margin-top: 16px;
 }
 
 .card-button {
     text-decoration: none !important;
+
     text-align: center;
+
     border-radius: 9px;
+
     padding: 10px 7px;
+
     font-size: 0.88rem;
+
     font-weight: 800;
+
     transition: 0.15s ease;
 }
 
 .boss-button {
     color: #eee9ff !important;
+
     background:
         linear-gradient(
             135deg,
             rgba(91, 53, 172, 0.68),
             rgba(64, 49, 137, 0.72)
         );
-    border: 1px solid rgba(150, 107, 255, 0.85);
+
+    border:
+        1px solid
+        rgba(150, 107, 255, 0.85);
 }
 
 .stat-button {
     color: #e7f5ff !important;
+
     background:
         linear-gradient(
             135deg,
             rgba(30, 90, 155, 0.72),
             rgba(23, 66, 125, 0.75)
         );
-    border: 1px solid rgba(65, 163, 255, 0.80);
+
+    border:
+        1px solid
+        rgba(65, 163, 255, 0.80);
 }
 
 .card-button:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.12);
+    transform:
+        translateY(-1px);
+
+    filter:
+        brightness(1.12);
 }
 
 .disabled-button {
     opacity: 0.28;
+
     pointer-events: none;
 }
 
@@ -533,16 +872,27 @@ logo_path = "logo.png"
 
 logo_html = ""
 
-if os.path.exists(logo_path):
-    with open(logo_path, "rb") as image_file:
+if os.path.exists(
+    logo_path
+):
+    with open(
+        logo_path,
+        "rb"
+    ) as image_file:
+
         encoded = base64.b64encode(
             image_file.read()
-        ).decode("utf-8")
+        ).decode(
+            "utf-8"
+        )
 
     logo_html = (
-        f'<img class="site-logo" '
-        f'src="data:image/png;base64,{encoded}">'
+        f'<img '
+        f'class="site-logo" '
+        f'src="data:image/png;'
+        f'base64,{encoded}">'
     )
+
 
 st.markdown(
     f"""
@@ -562,13 +912,22 @@ try:
     df = load_character_data()
 
 except Exception as e:
-    st.error("구글 시트 데이터를 불러오지 못했습니다.")
-    st.code(str(e))
+    st.error(
+        "구글 시트 데이터를 불러오지 못했습니다."
+    )
+
+    st.code(
+        str(e)
+    )
+
     st.stop()
 
 
 if df.empty:
-    st.warning("등록된 캐릭터가 없습니다.")
+    st.warning(
+        "등록된 캐릭터가 없습니다."
+    )
+
     st.stop()
 
 
@@ -594,90 +953,165 @@ if "순위" in df.columns:
 # =========================================================
 def build_character_card(row):
 
-    rank = clean(row.get("순위", ""))
-    nickname = esc(row.get("닉네임", ""))
-    name = esc(row.get("이름", ""))
-    job = esc(row.get("직업", ""))
-    level = esc(row.get("레벨", ""))
+    rank = clean(
+        row.get(
+            "순위",
+            ""
+        )
+    )
+
+    nickname = esc(
+        row.get(
+            "닉네임",
+            ""
+        )
+    )
+
+    name = esc(
+        row.get(
+            "이름",
+            ""
+        )
+    )
+
+    job = esc(
+        row.get(
+            "직업",
+            ""
+        )
+    )
+
+    level = esc(
+        row.get(
+            "레벨",
+            ""
+        )
+    )
 
     combat_power = clean(
-        row.get("전투력", "")
+        row.get(
+            "전투력",
+            ""
+        )
     )
 
     hexa = clean(
-        row.get("헥사환산", "")
+        row.get(
+            "헥사환산",
+            ""
+        )
     )
 
     boss_url = clean(
-        row.get("보스배율캡처URL", "")
+        row.get(
+            "보스배율캡처URL",
+            ""
+        )
     )
 
     target_boss = esc(
-        row.get("목표보스", "")
+        row.get(
+            "목표보스",
+            ""
+        )
     )
 
-    stat_url = get_stat_url(row)
+    stat_url = get_stat_url(
+        row
+    )
 
     image_url = clean(
-        row.get("대표이미지URL원본", "")
+        row.get(
+            "대표이미지URL원본",
+            ""
+        )
     )
 
     image_data = load_image_base64(
         image_url
     )
 
+
+    # 이미지
     if image_data:
         image_html = (
-            f'<img class="character-image" '
+            f'<img '
+            f'class="character-image" '
             f'src="{image_data}">'
         )
+
     else:
         image_html = (
-            '<div class="character-placeholder">'
+            '<div '
+            'class="character-placeholder">'
             '이미지 없음'
             '</div>'
         )
 
+
+    # 목표 보스
     if not target_boss:
         target_boss = "미정"
 
-    if boss_url.startswith("http"):
+
+    # 보스배율 버튼
+    if boss_url.startswith(
+        "http"
+    ):
         boss_button = (
-            f'<a class="card-button boss-button" '
+            f'<a '
+            f'class="card-button boss-button" '
             f'href="{html.escape(boss_url)}" '
             f'target="_blank">'
             f'▣ 보스배율 보기'
             f'</a>'
         )
+
     else:
         boss_button = (
-            '<div class="card-button boss-button disabled-button">'
+            '<div '
+            'class="card-button boss-button '
+            'disabled-button">'
             '▣ 보스배율 보기'
             '</div>'
         )
 
-    if stat_url.startswith("http"):
+
+    # 환산주스탯 버튼
+    if stat_url.startswith(
+        "http"
+    ):
         stat_button = (
-            f'<a class="card-button stat-button" '
+            f'<a '
+            f'class="card-button stat-button" '
             f'href="{html.escape(stat_url)}" '
             f'target="_blank">'
             f'▥ 환산주스탯 보기'
             f'</a>'
         )
+
     else:
         stat_button = (
-            '<div class="card-button stat-button disabled-button">'
+            '<div '
+            'class="card-button stat-button '
+            'disabled-button">'
             '▥ 환산주스탯 보기'
             '</div>'
         )
 
-    combat_text = format_combat_power(
-        combat_power
+
+    combat_text = (
+        format_combat_power(
+            combat_power
+        )
     )
 
-    hexa_text = format_hexa(
-        hexa
+    hexa_text = (
+        format_hexa(
+            hexa
+        )
     )
+
 
     return f"""
 <div class="character-card">
@@ -761,6 +1195,8 @@ for start in range(
 
         with col:
             st.markdown(
-                build_character_card(row),
+                build_character_card(
+                    row
+                ),
                 unsafe_allow_html=True
             )
