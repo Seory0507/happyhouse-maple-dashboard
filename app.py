@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 import streamlit as st
 from dotenv import load_dotenv
+from PIL import Image, ImageDraw, ImageFont
 
 
 # =========================================================
@@ -24,9 +25,99 @@ st.set_page_config(
 
 
 # =========================================================
+# 보스 / 난이도
+# 메이플스토리 공식 보스 목록 기준
+# 스우 이후
+# =========================================================
+BOSS_DIFFICULTIES = {
+    "스우": [
+        "노멀",
+        "하드",
+        "익스트림",
+    ],
+    "데미안": [
+        "노멀",
+        "하드",
+    ],
+    "가디언 엔젤 슬라임": [
+        "노멀",
+        "카오스",
+    ],
+    "루시드": [
+        "이지",
+        "노멀",
+        "하드",
+    ],
+    "윌": [
+        "이지",
+        "노멀",
+        "하드",
+    ],
+    "더스크": [
+        "노멀",
+        "카오스",
+    ],
+    "진 힐라": [
+        "노멀",
+        "하드",
+    ],
+    "듄켈": [
+        "노멀",
+        "하드",
+    ],
+    "검은 마법사": [
+        "하드",
+        "익스트림",
+    ],
+    "선택받은 세렌": [
+        "노멀",
+        "하드",
+        "익스트림",
+    ],
+    "감시자 칼로스": [
+        "이지",
+        "노멀",
+        "카오스",
+        "익스트림",
+    ],
+    "최초의 대적자": [
+        "이지",
+        "노멀",
+        "하드",
+        "익스트림",
+    ],
+    "카링": [
+        "이지",
+        "노멀",
+        "하드",
+        "익스트림",
+    ],
+    "벨로나": [
+        "이지",
+        "노멀",
+        "하드",
+    ],
+    "림보": [
+        "노멀",
+        "하드",
+    ],
+    "발드릭스": [
+        "노멀",
+        "하드",
+    ],
+    "찬란한 흉성": [
+        "노멀",
+        "하드",
+    ],
+    "유피테르": [
+        "노멀",
+        "하드",
+    ],
+}
+
+
+# =========================================================
 # 설정값
-# 로컬 = .env
-# 배포 = Streamlit Secrets
 # =========================================================
 def get_config(key, default=""):
     try:
@@ -44,9 +135,83 @@ APP_PASSWORD = get_config("APP_PASSWORD")
 
 
 # =========================================================
-# 비밀번호 인증
+# 로컬 이미지
+# =========================================================
+@st.cache_data
+def local_image_base64(path):
+
+    if not os.path.exists(path):
+        return ""
+
+    try:
+
+        with open(path, "rb") as f:
+            data = f.read()
+
+        ext = os.path.splitext(path)[1].lower()
+
+        mime = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+        }.get(ext, "image/png")
+
+        encoded = base64.b64encode(
+            data
+        ).decode("utf-8")
+
+        return (
+            f"data:{mime};base64,"
+            f"{encoded}"
+        )
+
+    except Exception:
+        return ""
+
+
+# =========================================================
+# 캐릭터 로컬 이미지
+# assets/characters/닉네임.png
+# =========================================================
+def get_character_local_image(nickname):
+
+    nickname = str(
+        nickname
+    ).strip()
+
+    if not nickname:
+        return ""
+
+    extensions = [
+        ".png",
+        ".webp",
+        ".jpg",
+        ".jpeg",
+    ]
+
+    for ext in extensions:
+
+        path = os.path.join(
+            "assets",
+            "characters",
+            nickname + ext,
+        )
+
+        if os.path.exists(path):
+            return local_image_base64(
+                path
+            )
+
+    return ""
+
+
+# =========================================================
+# 비밀번호
 # =========================================================
 def check_password():
+
     if "password_ok" not in st.session_state:
         st.session_state.password_ok = False
 
@@ -56,13 +221,14 @@ def check_password():
     st.markdown(
         """
 <style>
+
 .stApp {
     background:
         radial-gradient(
-            circle at top,
-            #162032 0%,
-            #0c111a 42%,
-            #080c13 100%
+            circle at 50% -10%,
+            #1d2c44 0%,
+            #101927 42%,
+            #080d15 100%
         );
 }
 
@@ -73,42 +239,54 @@ def check_password():
 
 .login-title {
     text-align: center;
-    color: #f4f7ff;
+    color: #f5f8ff;
     font-size: 2rem;
     font-weight: 900;
-    margin-bottom: 2rem;
+    margin-bottom: 22px;
 }
+
 </style>
 """,
         unsafe_allow_html=True,
     )
 
     st.markdown(
-        '<div class="login-title">'
-        '🍁 해피하우스 캐릭터 목록'
-        '</div>',
-        unsafe_allow_html=True
+        """
+<div class="login-title">
+🍁 해피하우스 캐릭터 목록
+</div>
+""",
+        unsafe_allow_html=True,
     )
 
     password = st.text_input(
         "비밀번호",
         type="password",
-        placeholder="비밀번호를 입력하세요"
+        placeholder="비밀번호를 입력하세요",
+        label_visibility="collapsed",
     )
 
     if st.button(
         "입장",
-        use_container_width=True
+        use_container_width=True,
     ):
+
         if not APP_PASSWORD:
-            st.error("앱 비밀번호가 설정되어 있지 않습니다.")
+            st.error(
+                "앱 비밀번호가 설정되어 있지 않습니다."
+            )
 
         elif password == APP_PASSWORD:
+
             st.session_state.password_ok = True
+
             st.rerun()
 
         else:
-            st.error("비밀번호가 틀렸습니다.")
+
+            st.error(
+                "비밀번호가 틀렸습니다."
+            )
 
     return False
 
@@ -118,32 +296,50 @@ if not check_password():
 
 
 # =========================================================
-# 구글 시트 ID
+# Google Sheet
 # =========================================================
 def get_sheet_id(sheet_url):
+
     if not sheet_url:
         return None
 
     try:
-        return sheet_url.split("/d/")[1].split("/")[0]
+
+        return (
+            sheet_url
+            .split("/d/")[1]
+            .split("/")[0]
+        )
+
     except IndexError:
         return None
 
 
 # =========================================================
-# Google Drive 파일 ID
+# Google Drive
 # =========================================================
 def get_drive_file_id(url):
+
     if not url:
         return None
 
-    url = str(url).strip()
+    url = str(
+        url
+    ).strip()
 
-    match = re.search(r"/file/d/([^/]+)", url)
+    match = re.search(
+        r"/file/d/([^/]+)",
+        url,
+    )
+
     if match:
         return match.group(1)
 
-    match = re.search(r"[?&]id=([^&]+)", url)
+    match = re.search(
+        r"[?&]id=([^&]+)",
+        url,
+    )
+
     if match:
         return match.group(1)
 
@@ -151,23 +347,30 @@ def get_drive_file_id(url):
 
 
 # =========================================================
-# 이미지 다운로드
-# 대표이미지 + 보스배율 캡처 공용
+# 외부 이미지
+# 6시간 캐시
 # =========================================================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=21600)
 def load_image_bytes(url):
+
     if not url:
         return None
 
-    file_id = get_drive_file_id(url)
+    file_id = get_drive_file_id(
+        url
+    )
 
     try:
+
         if file_id:
+
             download_url = (
-                f"https://drive.google.com/uc"
+                "https://drive.google.com/uc"
                 f"?export=download&id={file_id}"
             )
+
         else:
+
             download_url = url
 
         response = requests.get(
@@ -178,10 +381,14 @@ def load_image_bytes(url):
 
         response.raise_for_status()
 
-        content_type = response.headers.get(
-            "Content-Type",
-            ""
-        ).lower()
+        content_type = (
+            response.headers
+            .get(
+                "Content-Type",
+                "",
+            )
+            .lower()
+        )
 
         if "text/html" in content_type:
             return None
@@ -192,12 +399,12 @@ def load_image_bytes(url):
         return None
 
 
-# =========================================================
-# 대표이미지용 Base64
-# =========================================================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=21600)
 def load_image_base64(url):
-    image_bytes = load_image_bytes(url)
+
+    image_bytes = load_image_bytes(
+        url
+    )
 
     if not image_bytes:
         return ""
@@ -207,185 +414,309 @@ def load_image_base64(url):
     ).decode("utf-8")
 
     return (
-        f"data:image/png;"
-        f"base64,{encoded}"
+        "data:image/png;base64,"
+        f"{encoded}"
     )
 
 
 # =========================================================
-# 구글 시트 읽기
+# 구글 시트
+# 5분 캐시
 # =========================================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_character_data():
-    sheet_id = get_sheet_id(SHEET_URL)
+
+    sheet_id = get_sheet_id(
+        SHEET_URL
+    )
 
     if not sheet_id:
+
         raise ValueError(
             "구글 시트 주소를 확인해주세요."
         )
 
     csv_url = (
-        f"https://docs.google.com/"
+        "https://docs.google.com/"
         f"spreadsheets/d/{sheet_id}/gviz/tq"
         f"?tqx=out:csv&sheet={quote(SHEET_NAME)}"
     )
 
-    df = pd.read_csv(csv_url)
+    df = pd.read_csv(
+        csv_url
+    )
 
-    df = df.dropna(how="all")
-
-    return df
+    return df.dropna(
+        how="all"
+    )
 
 
 # =========================================================
 # 값 정리
 # =========================================================
 def clean(value):
+
     if pd.isna(value):
         return ""
 
-    return str(value).strip()
+    return str(
+        value
+    ).strip()
 
 
 def esc(value):
+
     return html.escape(
         clean(value)
     )
 
 
 # =========================================================
-# 숫자 파싱
+# 숫자
 # =========================================================
 def parse_number(value):
-    try:
-        text = str(value).strip()
-        text = text.replace(",", "")
 
-        return float(text)
+    try:
+
+        text = (
+            str(value)
+            .replace(",", "")
+            .strip()
+        )
+
+        if not text:
+            return None
+
+        return float(
+            text
+        )
 
     except Exception:
         return None
 
 
-# =========================================================
-# 전투력 표시
-#
-# 267,349,090 → 2억 6천
-# 186,507,765 → 1억 8천
-# =========================================================
 def format_combat_power(value):
-    number = parse_number(value)
+
+    number = parse_number(
+        value
+    )
 
     if number is None:
         return clean(value)
 
-    number = int(number)
+    number = int(
+        number
+    )
 
     if number >= 100_000_000:
-        eok = number // 100_000_000
-        remainder = number % 100_000_000
-        cheonman = remainder // 10_000_000
 
-        if cheonman > 0:
-            return f"{eok}억 {cheonman}천"
+        eok = (
+            number
+            // 100_000_000
+        )
+
+        remainder = (
+            number
+            % 100_000_000
+        )
+
+        cheonman = (
+            remainder
+            // 10_000_000
+        )
+
+        if cheonman:
+
+            return (
+                f"{eok}억 "
+                f"{cheonman}천"
+            )
 
         return f"{eok}억"
 
+
     if number >= 10_000_000:
-        cheonman = number // 10_000_000
-        remainder = number % 10_000_000
-        baekman = remainder // 1_000_000
 
-        if baekman > 0:
-            return f"{cheonman}천 {baekman}백만"
+        cheonman = (
+            number
+            // 10_000_000
+        )
 
-        return f"{cheonman}천만"
+        remainder = (
+            number
+            % 10_000_000
+        )
+
+        baekman = (
+            remainder
+            // 1_000_000
+        )
+
+        if baekman:
+
+            return (
+                f"{cheonman}천 "
+                f"{baekman}백만"
+            )
+
+        return (
+            f"{cheonman}천만"
+        )
+
 
     if number >= 1_000_000:
-        baekman = number // 1_000_000
-        remainder = number % 1_000_000
-        sibman = remainder // 100_000
 
-        if sibman > 0:
-            return f"{baekman}백 {sibman}십만"
+        baekman = (
+            number
+            // 1_000_000
+        )
 
-        return f"{baekman}백만"
+        return (
+            f"{baekman}백만"
+        )
+
 
     return f"{number:,}"
 
 
-# =========================================================
-# 헥사환산 표시
-#
-# 74,983 → 7.5만
-# =========================================================
 def format_hexa(value):
-    number = parse_number(value)
+
+    number = parse_number(
+        value
+    )
 
     if number is None:
         return clean(value)
 
     if number >= 10_000:
-        return f"{number / 10_000:.1f}만"
 
-    return f"{int(number):,}"
+        return (
+            f"{number / 10_000:.1f}만"
+        )
+
+    return (
+        f"{int(number):,}"
+    )
 
 
 # =========================================================
-# 환산주스탯 URL
+# 환산 링크
 # =========================================================
 def get_stat_url(row):
-    candidates = [
+
+    for col in [
         "환산주스탯URL",
         "환산주스탯",
-    ]
+    ]:
 
-    for col in candidates:
         if col in row.index:
+
             value = clean(
-                row.get(col, "")
+                row.get(
+                    col,
+                    "",
+                )
             )
 
-            if value.startswith("http"):
+            if value.startswith(
+                "http"
+            ):
                 return value
 
     return ""
 
 
 # =========================================================
-# 순위 배지
+# 순위
 # =========================================================
-def rank_badge(rank):
+def rank_num(rank):
+
     try:
-        rank_num = int(float(rank))
+
+        return int(
+            float(rank)
+        )
+
     except Exception:
+        return None
+
+
+def rank_html(rank):
+
+    num = rank_num(
+        rank
+    )
+
+    if num is None:
         return ""
 
-    if rank_num == 1:
-        css = "rank-gold"
-        icon = "♛"
+    if num == 1:
 
-    elif rank_num == 2:
-        css = "rank-silver"
-        icon = "♛"
+        path = (
+            "assets/rank_gold.png"
+        )
 
-    elif rank_num == 3:
-        css = "rank-bronze"
-        icon = "♛"
+    elif num == 2:
+
+        path = (
+            "assets/rank_silver.png"
+        )
+
+    elif num == 3:
+
+        path = (
+            "assets/rank_bronze.png"
+        )
 
     else:
-        css = "rank-normal"
-        icon = "♟"
+
+        return (
+            '<div class="rank-normal-text">'
+            f'{num}위'
+            '</div>'
+        )
+
+    image = local_image_base64(
+        path
+    )
+
+    if not image:
+
+        return (
+            '<div class="rank-normal-text">'
+            f'{num}위'
+            '</div>'
+        )
 
     return (
-        f'<div class="rank-badge {css}">'
-        f'{icon}&nbsp; {rank_num}위'
-        f'</div>'
+        '<div class="rank-image-wrap">'
+        f'<img src="{image}" '
+        'class="rank-image">'
+        f'<span>{num}위</span>'
+        '</div>'
     )
 
 
+def rank_card_class(rank):
+
+    num = rank_num(
+        rank
+    )
+
+    if num == 1:
+        return "rank-card-gold"
+
+    if num == 2:
+        return "rank-card-silver"
+
+    if num == 3:
+        return "rank-card-bronze"
+
+    return ""
+
+
 # =========================================================
-# 메인 CSS
+# CSS
 # =========================================================
 st.markdown(
     """
@@ -394,217 +725,320 @@ st.markdown(
 .stApp {
     background:
         radial-gradient(
-            circle at top,
-            #162032 0%,
-            #0c111a 42%,
-            #080c13 100%
+            circle at 50% -12%,
+            rgba(29,49,79,.98) 0%,
+            rgba(13,22,35,1) 43%,
+            rgba(7,12,20,1) 100%
         );
 }
 
 .block-container {
-    max-width: 1600px;
-    padding-top: 4rem;
-    padding-bottom: 3rem;
+    max-width: 1580px;
+    padding-top: 3.2rem;
+    padding-bottom: 4rem;
 }
 
 
 /* HEADER */
 
-.site-header {
+.main-header {
     display: flex;
     align-items: center;
-    gap: 18px;
-    margin-bottom: 30px;
+    justify-content: space-between;
+    margin-bottom: 16px;
 }
 
-.site-logo {
-    width: 72px;
-    height: 72px;
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.main-logo {
+    width: 70px;
+    height: 70px;
     object-fit: contain;
 }
 
-.site-title {
-    font-size: 2.4rem;
+.main-title {
+    color: #f8faff;
+    font-size: 2.45rem;
     font-weight: 900;
-    letter-spacing: -1.5px;
-    line-height: 1.25;
-    color: #f4f7ff;
+    letter-spacing: -1.8px;
+}
+
+.maple-logo {
+    max-width: 190px;
+    max-height: 78px;
+    object-fit: contain;
 }
 
 
-/* CARD */
+/* CHARACTER CARD */
 
 .character-card {
+    position: relative;
+    overflow: hidden;
+
     background:
         linear-gradient(
             145deg,
-            rgba(20, 29, 43, 0.96),
-            rgba(10, 16, 26, 0.98)
+            rgba(20,31,47,.98),
+            rgba(9,16,26,.99)
         );
 
     border:
-        1px solid rgba(132, 161, 204, 0.28);
+        1px solid
+        rgba(126,153,192,.28);
 
-    border-radius: 18px;
+    border-radius: 20px;
 
-    padding: 18px;
+    padding:
+        17px 18px 18px 18px;
 
-    min-height: 270px;
+    min-height: 275px;
 
     box-shadow:
-        0 12px 28px
-        rgba(0, 0, 0, 0.18);
+        0 15px 32px
+        rgba(0,0,0,.23);
+}
+
+.rank-card-gold {
+    border-color:
+        rgba(218,174,50,.54);
+}
+
+.rank-card-silver {
+    border-color:
+        rgba(172,187,211,.43);
+}
+
+.rank-card-bronze {
+    border-color:
+        rgba(193,116,77,.46);
 }
 
 
 /* RANK */
 
 .card-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    min-height: 42px;
+    height: 36px;
 }
 
-.rank-badge {
+.rank-image-wrap {
     display: inline-flex;
     align-items: center;
-    padding: 5px 11px;
-    border-radius: 9px;
-    font-size: 0.93rem;
+    gap: 6px;
+
+    color: #e9eef8;
+
+    font-size: .90rem;
+    font-weight: 850;
+}
+
+.rank-image {
+    width: 27px;
+    height: 27px;
+    object-fit: contain;
+}
+
+.rank-normal-text {
+    color: #c1cede;
+
+    font-size: .91rem;
     font-weight: 800;
-}
 
-.rank-gold {
-    color: #ffd955;
-    background: rgba(130, 92, 0, 0.28);
-    border: 1px solid rgba(255, 206, 55, 0.6);
-}
-
-.rank-silver {
-    color: #dfe7f7;
-    background: rgba(120, 135, 160, 0.20);
-    border: 1px solid rgba(170, 185, 210, 0.35);
-}
-
-.rank-bronze {
-    color: #ffb487;
-    background: rgba(140, 76, 48, 0.24);
-    border: 1px solid rgba(210, 130, 90, 0.45);
-}
-
-.rank-normal {
-    color: #c9d5e9;
-    background: rgba(80, 98, 125, 0.20);
-    border: 1px solid rgba(140, 160, 190, 0.35);
+    padding-top: 5px;
 }
 
 
-/* MAIN */
+/* CARD BODY */
 
 .card-main {
     display: grid;
-    grid-template-columns:
-        125px minmax(0, 1fr);
 
-    gap: 18px;
+    grid-template-columns:
+        128px minmax(0,1fr);
+
+    gap: 17px;
 
     align-items: center;
-
-    margin-top: 6px;
 }
 
+
+/* CHARACTER */
+
 .character-image-box {
+    position: relative;
+
+    height: 150px;
+
     display: flex;
+
     align-items: center;
     justify-content: center;
-    height: 150px;
+}
+
+.character-image-box::before {
+    content: "";
+
+    position: absolute;
+
+    width: 112px;
+    height: 112px;
+
+    border-radius: 50%;
+
+    background:
+        radial-gradient(
+            circle,
+            rgba(95,151,222,.13),
+            rgba(67,108,159,.025) 62%,
+            transparent 76%
+        );
 }
 
 .character-image {
-    max-width: 125px;
-    max-height: 145px;
+    position: relative;
+
+    z-index: 2;
+
+    max-width: 132px;
+    max-height: 148px;
+
     object-fit: contain;
 
     filter:
         drop-shadow(
-            0 6px 8px
-            rgba(0, 0, 0, 0.45)
+            0 8px 10px
+            rgba(0,0,0,.46)
         );
 }
 
-.character-placeholder {
-    width: 110px;
-    height: 110px;
 
-    border:
-        1px dashed
-        rgba(180, 190, 210, 0.35);
-
-    border-radius: 14px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    color: #8996aa;
-    font-size: 0.8rem;
-}
-
-
-/* TEXT */
+/* NAME */
 
 .nickname {
-    color: #f7f9ff;
     font-size: 1.45rem;
+
+    color: #f9faff;
+
     font-weight: 900;
-    margin-bottom: 2px;
+
+    letter-spacing: -.8px;
 }
 
 .realname {
-    color: #adb9cd;
-    font-size: 0.88rem;
+    color: #94a6bf;
+
+    font-size: .86rem;
+
     margin-bottom: 10px;
 }
 
 
-/* JOB */
+/* JOB / META */
 
-.job-level-row {
+.job-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
 
-    gap: 8px;
+    align-items: flex-start;
+    justify-content: space-between;
 
     margin-bottom: 13px;
 }
 
 .job-chip {
-    display: inline-block;
+    background:
+        rgba(59,94,137,.25);
+
+    border:
+        1px solid
+        rgba(102,147,203,.30);
+
+    border-radius: 8px;
 
     padding: 5px 9px;
+
+    color: #eaf0fa;
+
+    font-size: .84rem;
+
+    font-weight: 750;
+}
+
+.right-meta {
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: flex-end;
+
+    gap: 5px;
+}
+
+.stat-chip-link {
+    display: inline-block;
+
+    text-decoration: none !important;
+
+    padding: 4px 8px;
 
     border-radius: 8px;
 
     background:
-        rgba(73, 113, 162, 0.20);
+        rgba(29,87,150,.35);
 
     border:
         1px solid
-        rgba(103, 147, 200, 0.25);
+        rgba(76,157,238,.38);
 
-    color: #e7edf8;
+    color:
+        #cce9ff !important;
 
-    font-size: 0.87rem;
+    font-size: .72rem;
 
-    font-weight: 700;
+    font-weight: 800;
+}
+
+.stat-chip-link:hover {
+    background:
+        rgba(40,107,177,.55);
+
+    color:
+        #ffffff !important;
+}
+
+
+/* SERVER */
+
+.server-chip {
+    display: inline-block;
+
+    padding: 4px 8px;
+
+    border-radius: 8px;
+
+    background:
+        rgba(75,106,148,.17);
+
+    border:
+        1px solid
+        rgba(115,151,199,.24);
+
+    color: #b7cce6;
+
+    font-size: .74rem;
+
+    font-weight: 750;
 }
 
 .level {
-    color: #c9d2e1;
-    font-size: 0.9rem;
-    font-weight: 700;
+    color: #ccd6e6;
+
+    font-size: .87rem;
+
+    font-weight: 750;
 }
 
 
@@ -612,96 +1046,201 @@ st.markdown(
 
 .stats-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+
+    grid-template-columns:
+        1fr 1fr;
+
     gap: 14px;
 }
 
 .stat-box:first-child {
     border-right:
         1px solid
-        rgba(130, 150, 180, 0.18);
+        rgba(126,149,182,.17);
 }
 
 .stat-label {
-    color: #8f9cb0;
-    font-size: 0.77rem;
-    margin-bottom: 2px;
+    color: #8191aa;
+
+    font-size: .73rem;
 }
 
 .stat-value {
-    color: #f3f6fd;
-    font-size: 1.12rem;
-    font-weight: 800;
+    color: #f6f8fe;
+
+    font-size: 1.10rem;
+
+    font-weight: 850;
 }
 
-
-/* TARGET */
-
 .target-boss {
-    margin-top: 15px;
-    color: #e7edf8;
-    font-size: 0.89rem;
+    margin-top: 14px;
+
+    color: #dfe7f4;
+
+    font-size: .88rem;
+
     font-weight: 650;
 }
 
 
-/* EXPANDER */
+/* BOSS IMAGE */
 
 div[data-testid="stExpander"] {
     border-radius: 10px;
+
     border:
         1px solid
-        rgba(150, 107, 255, 0.55);
+        rgba(144,107,234,.53);
 
     background:
-        rgba(63, 43, 110, 0.18);
+        rgba(69,47,115,.19);
 
-    margin-top: 8px;
+    overflow: hidden;
+
+    margin-top: 7px;
 }
 
-div[data-testid="stExpander"] summary {
-    font-weight: 800;
+
+/* PARTY */
+
+.party-page-title {
+    font-size: 1.65rem;
+
+    color: #f7f9ff;
+
+    font-weight: 900;
+
+    margin-top: 15px;
+
+    margin-bottom: 3px;
+}
+
+.party-description {
+    color: #8fa0b8;
+
+    font-size: .86rem;
+
+    margin-bottom: 20px;
+}
+
+.party-section-title {
+    color: #edf3ff;
+
+    font-size: 1.10rem;
+
+    font-weight: 850;
+
+    margin-top: 18px;
+
+    margin-bottom: 6px;
 }
 
 
-/* 환산주스탯 버튼 */
+/* COMPLETED */
 
-div.stLinkButton > a {
-    border-radius: 9px !important;
-
+.completed-boss {
     background:
         linear-gradient(
-            135deg,
-            rgba(30, 90, 155, 0.72),
-            rgba(23, 66, 125, 0.75)
-        ) !important;
+            145deg,
+            rgba(24,37,56,.98),
+            rgba(11,18,29,.98)
+        );
 
     border:
         1px solid
-        rgba(65, 163, 255, 0.80) !important;
+        rgba(90,145,205,.30);
 
-    color: #e7f5ff !important;
+    border-radius: 16px;
 
-    font-weight: 800 !important;
+    padding: 16px 18px;
+
+    margin-bottom: 8px;
+}
+
+.completed-boss-title {
+    color: #f7f9ff;
+
+    font-size: 1.12rem;
+
+    font-weight: 900;
+}
+
+.completed-boss-info {
+    color: #95a7bf;
+
+    font-size: .82rem;
+
+    margin-top: 3px;
 }
 
 
-/* 모바일 */
+/* FINAL */
 
-@media (max-width: 900px) {
+.final-boss-card {
+    background:
+        linear-gradient(
+            145deg,
+            rgba(18,29,45,.99),
+            rgba(8,14,23,.99)
+        );
+
+    border:
+        1px solid
+        rgba(112,151,204,.34);
+
+    border-radius: 18px;
+
+    padding: 18px 20px;
+
+    margin-bottom: 15px;
+}
+
+.final-boss-name {
+    color: #ffffff;
+
+    font-size: 1.25rem;
+
+    font-weight: 900;
+
+    margin-bottom: 10px;
+}
+
+.final-party-line {
+    color: #dde8f7;
+
+    padding: 8px 0;
+
+    border-bottom:
+        1px solid
+        rgba(105,129,162,.13);
+}
+
+.final-party-stat {
+    color: #8094af;
+
+    font-size: .78rem;
+
+    margin-top: 3px;
+}
+
+
+/* MOBILE */
+
+@media (max-width: 1000px) {
+
+    .maple-logo {
+        max-width: 145px;
+    }
 
     .card-main {
         grid-template-columns:
-            105px minmax(0, 1fr);
+            105px minmax(0,1fr);
     }
 
     .character-image {
-        max-width: 105px;
-        max-height: 125px;
-    }
-
-    .nickname {
-        font-size: 1.25rem;
+        max-width: 108px;
+        max-height: 126px;
     }
 }
 
@@ -714,33 +1253,55 @@ div.stLinkButton > a {
 # =========================================================
 # HEADER
 # =========================================================
-logo_path = "logo.png"
+main_logo = local_image_base64(
+    "assets/logo_main.png"
+)
 
-logo_html = ""
+maple_logo = local_image_base64(
+    "assets/logo_maplestory.png"
+)
 
-if os.path.exists(logo_path):
-    with open(
-        logo_path,
-        "rb"
-    ) as image_file:
 
-        encoded = base64.b64encode(
-            image_file.read()
-        ).decode("utf-8")
+main_logo_html = ""
 
-    logo_html = (
-        f'<img '
-        f'class="site-logo" '
-        f'src="data:image/png;'
-        f'base64,{encoded}">'
+if main_logo:
+
+    main_logo_html = (
+        '<img '
+        'class="main-logo" '
+        f'src="{main_logo}">'
+    )
+
+
+maple_logo_html = ""
+
+if maple_logo:
+
+    maple_logo_html = (
+        '<img '
+        'class="maple-logo" '
+        f'src="{maple_logo}">'
     )
 
 
 st.markdown(
     f"""
-<div class="site-header">
-{logo_html}
-<div class="site-title">해피하우스 캐릭터 목록</div>
+<div class="main-header">
+
+<div class="header-left">
+
+{main_logo_html}
+
+<div class="main-title">
+해피하우스 캐릭터 목록
+</div>
+
+</div>
+
+<div>
+{maple_logo_html}
+</div>
+
 </div>
 """,
     unsafe_allow_html=True,
@@ -751,18 +1312,24 @@ st.markdown(
 # DATA
 # =========================================================
 try:
+
     df = load_character_data()
 
 except Exception as e:
+
     st.error(
         "구글 시트 데이터를 불러오지 못했습니다."
     )
 
-    st.code(str(e))
+    st.code(
+        str(e)
+    )
+
     st.stop()
 
 
 if df.empty:
+
     st.warning(
         "등록된 캐릭터가 없습니다."
     )
@@ -771,101 +1338,263 @@ if df.empty:
 
 
 # =========================================================
-# 순위 정렬
+# SORT / ID
 # =========================================================
 if "순위" in df.columns:
 
     df["순위정렬"] = pd.to_numeric(
         df["순위"],
-        errors="coerce"
+        errors="coerce",
     )
 
     df = df.sort_values(
-        by="순위정렬",
+        "순위정렬",
         ascending=True,
-        na_position="last"
+        na_position="last",
     )
 
 
+df = df.reset_index(
+    drop=True
+)
+
+df["_캐릭터ID"] = (
+    df.index
+    .astype(int)
+)
+
+
 # =========================================================
-# 캐릭터 정보 HTML
+# CHARACTER LOOKUP
 # =========================================================
-def build_character_card(row):
+character_lookup = {}
+
+
+for _, row in df.iterrows():
+
+    cid = int(
+        row["_캐릭터ID"]
+    )
+
+    character_lookup[cid] = {
+
+        "id":
+            cid,
+
+        "nickname":
+            clean(
+                row.get(
+                    "닉네임",
+                    "",
+                )
+            ),
+
+        "name":
+            clean(
+                row.get(
+                    "이름",
+                    "",
+                )
+            ),
+
+        "job":
+            clean(
+                row.get(
+                    "직업",
+                    "",
+                )
+            ),
+
+        "server":
+            clean(
+                row.get(
+                    "서버",
+                    "",
+                )
+            ),
+
+        "level":
+            clean(
+                row.get(
+                    "레벨",
+                    "",
+                )
+            ),
+
+        "combat":
+            parse_number(
+                row.get(
+                    "전투력",
+                    "",
+                )
+            ) or 0,
+
+        "hexa":
+            parse_number(
+                row.get(
+                    "헥사환산",
+                    "",
+                )
+            ) or 0,
+    }
+
+
+all_character_ids = list(
+    character_lookup.keys()
+)
+
+
+# =========================================================
+# CARD
+# =========================================================
+def build_card(row):
 
     rank = clean(
-        row.get("순위", "")
+        row.get(
+            "순위",
+            "",
+        )
     )
 
-    nickname = esc(
-        row.get("닉네임", "")
+    nickname_raw = clean(
+        row.get(
+            "닉네임",
+            "",
+        )
+    )
+
+    nickname = html.escape(
+        nickname_raw
     )
 
     name = esc(
-        row.get("이름", "")
+        row.get(
+            "이름",
+            "",
+        )
     )
 
     job = esc(
-        row.get("직업", "")
+        row.get(
+            "직업",
+            "",
+        )
+    )
+
+    server = esc(
+        row.get(
+            "서버",
+            "",
+        )
     )
 
     level = esc(
-        row.get("레벨", "")
-    )
-
-    combat_power = clean(
-        row.get("전투력", "")
-    )
-
-    hexa = clean(
-        row.get("헥사환산", "")
-    )
-
-    target_boss = esc(
-        row.get("목표보스", "")
-    )
-
-    image_url = clean(
         row.get(
-            "대표이미지URL원본",
-            ""
+            "레벨",
+            "",
         )
     )
-
-    image_data = load_image_base64(
-        image_url
-    )
-
-    if image_data:
-        image_html = (
-            f'<img '
-            f'class="character-image" '
-            f'src="{image_data}">'
-        )
-
-    else:
-        image_html = (
-            '<div '
-            'class="character-placeholder">'
-            '이미지 없음'
-            '</div>'
-        )
-
-    if not target_boss:
-        target_boss = "미정"
 
     combat_text = format_combat_power(
-        combat_power
+        row.get(
+            "전투력",
+            "",
+        )
     )
 
     hexa_text = format_hexa(
-        hexa
+        row.get(
+            "헥사환산",
+            "",
+        )
     )
 
+    target = esc(
+        row.get(
+            "목표보스",
+            "",
+        )
+    )
+
+    if not target:
+        target = "미정"
+
+
+    # 로컬 이미지 우선
+    image = get_character_local_image(
+        nickname_raw
+    )
+
+
+    # 로컬에 없으면 Drive
+    if not image:
+
+        image_url = clean(
+            row.get(
+                "대표이미지URL원본",
+                "",
+            )
+        )
+
+        image = load_image_base64(
+            image_url
+        )
+
+
+    if image:
+
+        image_html = (
+            '<img '
+            'class="character-image" '
+            f'src="{image}">'
+        )
+
+    else:
+
+        image_html = ""
+
+
+    stat_url = get_stat_url(
+        row
+    )
+
+
+    stat_link_html = ""
+
+    if stat_url:
+
+        safe_url = html.escape(
+            stat_url,
+            quote=True,
+        )
+
+        stat_link_html = (
+            '<a '
+            'class="stat-chip-link" '
+            f'href="{safe_url}" '
+            'target="_blank">'
+            '🔎 환산주스탯'
+            '</a>'
+        )
+
+
+    server_html = ""
+
+    if server:
+
+        server_html = (
+            '<span '
+            'class="server-chip">'
+            f'{server}'
+            '</span>'
+        )
+
+
     return f"""
-<div class="character-card">
+<div class="character-card {rank_card_class(rank)}">
 
 <div class="card-top">
-{rank_badge(rank)}
+{rank_html(rank)}
 </div>
 
 <div class="card-main">
@@ -884,17 +1613,26 @@ def build_character_card(row):
 {name}
 </div>
 
-<div class="job-level-row">
+<div class="job-row">
 
 <span class="job-chip">
 {job}
 </span>
+
+<div class="right-meta">
+
+{stat_link_html}
+
+{server_html}
 
 <span class="level">
 Lv. {level}
 </span>
 
 </div>
+
+</div>
+
 
 <div class="stats-row">
 
@@ -910,6 +1648,7 @@ Lv. {level}
 
 </div>
 
+
 <div class="stat-box">
 
 <div class="stat-label">
@@ -924,12 +1663,16 @@ Lv. {level}
 
 </div>
 
+
 <div class="target-boss">
+
 🎯 목표 보스:
-<b>{target_boss}</b>
+<b>{target}</b>
+
 </div>
 
 </div>
+
 </div>
 
 </div>
@@ -937,116 +1680,1975 @@ Lv. {level}
 
 
 # =========================================================
-# 3열 출력
+# PARTY FUNCTIONS
 # =========================================================
-CARDS_PER_ROW = 3
+def character_option_text(cid):
 
-for start in range(
-    0,
-    len(df),
-    CARDS_PER_ROW
-):
-
-    cols = st.columns(
-        CARDS_PER_ROW,
-        gap="medium"
-    )
-
-    rows = df.iloc[
-        start:
-        start + CARDS_PER_ROW
+    data = character_lookup[
+        cid
     ]
 
-    for col, (_, row) in zip(
-        cols,
-        rows.iterrows()
+    return (
+        f"{data['nickname']} | "
+        f"{data['job']} | "
+        f"{data['server']} | "
+        f"{format_hexa(data['hexa'])}"
+    )
+
+
+def calculate_party_stats(
+    member_ids
+):
+
+    if not member_ids:
+        return 0, 0
+
+
+    total_combat = sum(
+
+        character_lookup[
+            cid
+        ]["combat"]
+
+        for cid
+        in member_ids
+    )
+
+
+    valid_hexa = [
+
+        character_lookup[
+            cid
+        ]["hexa"]
+
+        for cid
+        in member_ids
+
+        if character_lookup[
+            cid
+        ]["hexa"] > 0
+    ]
+
+
+    average_hexa = (
+
+        sum(
+            valid_hexa
+        )
+        / len(
+            valid_hexa
+        )
+
+        if valid_hexa
+
+        else 0
+    )
+
+
+    return (
+        int(
+            total_combat
+        ),
+        average_hexa,
+    )
+
+
+# =========================================================
+# SESSION STATE
+# =========================================================
+if "completed_bosses" not in st.session_state:
+
+    st.session_state.completed_bosses = {}
+
+
+if "show_final_result" not in st.session_state:
+
+    st.session_state.show_final_result = False
+
+
+# =========================================================
+# 파티 위젯 키 초기화
+# =========================================================
+def clear_party_widget_keys():
+
+    keys = [
+        "party_boss_name",
+        "party_boss_difficulty",
+        "party_count",
+
+        # 옛 버전 잔여 키도 정리
+        "party_target_boss",
+    ]
+
+
+    for i in range(
+        1,
+        11,
     ):
 
-        with col:
+        keys.append(
+            f"party_members_{i}"
+        )
 
-            # -----------------------------------------
-            # 기본 캐릭터 카드
-            # -----------------------------------------
-            st.markdown(
-                build_character_card(row),
-                unsafe_allow_html=True
+
+    for key in keys:
+
+        if key in st.session_state:
+
+            del st.session_state[
+                key
+            ]
+
+
+# =========================================================
+# 예약 초기화
+# =========================================================
+if st.session_state.get(
+    "pending_clear_party_editor",
+    False,
+):
+
+    clear_party_widget_keys()
+
+    del st.session_state[
+        "pending_clear_party_editor"
+    ]
+
+
+# =========================================================
+# 예약 불러오기
+# =========================================================
+if "pending_load_boss" in st.session_state:
+
+    completed_key = (
+        st.session_state[
+            "pending_load_boss"
+        ]
+    )
+
+
+    boss_data = (
+        st.session_state
+        .completed_bosses
+        .get(
+            completed_key
+        )
+    )
+
+
+    clear_party_widget_keys()
+
+
+    if boss_data:
+
+        st.session_state[
+            "party_boss_name"
+        ] = boss_data[
+            "boss"
+        ]
+
+
+        st.session_state[
+            "party_boss_difficulty"
+        ] = boss_data[
+            "difficulty"
+        ]
+
+
+        st.session_state[
+            "party_count"
+        ] = boss_data[
+            "party_count"
+        ]
+
+
+        for i, members in enumerate(
+            boss_data[
+                "parties"
+            ],
+            start=1,
+        ):
+
+            st.session_state[
+                f"party_members_{i}"
+            ] = list(
+                members
             )
 
 
-            # -----------------------------------------
-            # 보스배율 캡처
-            # 사이트 안에서 펼쳐보기
-            # -----------------------------------------
-            boss_url = clean(
-                row.get(
-                    "보스배율캡처URL",
-                    ""
+    del st.session_state[
+        "pending_load_boss"
+    ]
+
+
+# =========================================================
+# 기본 파티 값
+# =========================================================
+if "party_boss_name" not in st.session_state:
+
+    st.session_state[
+        "party_boss_name"
+    ] = list(
+        BOSS_DIFFICULTIES.keys()
+    )[0]
+
+
+if "party_count" not in st.session_state:
+
+    st.session_state[
+        "party_count"
+    ] = 1
+
+
+# =========================================================
+# 현재 보스 편성 완료
+# =========================================================
+def save_current_boss():
+
+    boss_name = (
+        st.session_state
+        .get(
+            "party_boss_name",
+            "",
+        )
+    )
+
+
+    difficulty = (
+        st.session_state
+        .get(
+            "party_boss_difficulty",
+            "",
+        )
+    )
+
+
+    if not boss_name:
+
+        return (
+            False,
+            "보스를 선택해주세요.",
+        )
+
+
+    if not difficulty:
+
+        return (
+            False,
+            "난이도를 선택해주세요.",
+        )
+
+
+    count = int(
+        st.session_state.get(
+            "party_count",
+            1,
+        )
+    )
+
+
+    parties = []
+
+    total_members = 0
+
+
+    for i in range(
+        1,
+        count + 1,
+    ):
+
+        members = list(
+            st.session_state.get(
+                f"party_members_{i}",
+                [],
+            )
+        )
+
+        parties.append(
+            members
+        )
+
+        total_members += len(
+            members
+        )
+
+
+    if total_members == 0:
+
+        return (
+            False,
+            "파티원을 한 명 이상 선택해주세요.",
+        )
+
+
+    display_name = (
+        f"{difficulty} "
+        f"{boss_name}"
+    )
+
+
+    st.session_state.completed_bosses[
+        display_name
+    ] = {
+
+        "boss":
+            boss_name,
+
+        "difficulty":
+            difficulty,
+
+        "display_name":
+            display_name,
+
+        "party_count":
+            count,
+
+        "parties":
+            parties,
+    }
+
+
+    st.session_state[
+        "show_final_result"
+    ] = False
+
+
+    return (
+        True,
+        display_name,
+    )
+
+
+# =========================================================
+# 최종 텍스트
+# 파티 번호 없음
+# =========================================================
+def build_final_text():
+
+    lines = [
+        "해피하우스 보스 파티 편성표",
+        "=" * 32,
+        "",
+    ]
+
+
+    for display_name, boss_data in (
+        st.session_state
+        .completed_bosses
+        .items()
+    ):
+
+        lines.append(
+            f"[{display_name}]"
+        )
+
+
+        for members in boss_data[
+            "parties"
+        ]:
+
+            if not members:
+                continue
+
+
+            names = [
+
+                character_lookup[
+                    cid
+                ]["nickname"]
+
+                for cid
+                in members
+            ]
+
+
+            total_combat, avg_hexa = (
+                calculate_party_stats(
+                    members
                 )
             )
 
-            if boss_url:
 
-                with st.expander(
-                    "📊 보스배율 보기",
-                    expanded=False
-                ):
+            lines.append(
+                " - "
+                + " / ".join(
+                    names
+                )
+            )
 
-                    boss_image = load_image_bytes(
-                        boss_url
+
+            lines.append(
+                "   "
+                f"총 전투력 "
+                f"{format_combat_power(total_combat)}"
+                " | "
+                f"평균 헥사 "
+                f"{format_hexa(avg_hexa)}"
+            )
+
+
+        lines.append("")
+
+
+    return "\n".join(
+        lines
+    )
+
+
+# =========================================================
+# 한글 폰트
+# =========================================================
+def find_korean_font():
+
+    candidates = [
+
+        "C:/Windows/Fonts/malgun.ttf",
+
+        "C:/Windows/Fonts/malgunbd.ttf",
+
+        "assets/NotoSansKR-Regular.ttf",
+
+        "/usr/share/fonts/opentype/noto/"
+        "NotoSansCJK-Regular.ttc",
+
+        "/usr/share/fonts/truetype/nanum/"
+        "NanumGothic.ttf",
+
+        "/usr/share/fonts/truetype/dejavu/"
+        "DejaVuSans.ttf",
+    ]
+
+
+    for path in candidates:
+
+        if os.path.exists(
+            path
+        ):
+
+            return path
+
+
+    return None
+
+
+# =========================================================
+# 최종 PNG
+# 2열 보스 배치
+# 파티 번호 없음
+# =========================================================
+def make_party_image():
+
+    completed = (
+        st.session_state
+        .completed_bosses
+    )
+
+    if not completed:
+        return None
+
+
+    canvas_width = 1600
+
+    outer_padding = 50
+
+    top_header_height = 140
+
+    card_gap = 28
+
+    card_width = (
+        canvas_width
+        - outer_padding * 2
+        - card_gap
+    ) // 2
+
+
+    boss_header_h = 56
+
+    card_inner_top = 18
+
+    card_inner_bottom = 18
+
+    party_gap = 10
+
+
+    # =====================================================
+    # 폰트
+    # =====================================================
+    font_path = (
+        find_korean_font()
+    )
+
+
+    if font_path:
+
+        title_font = (
+            ImageFont.truetype(
+                font_path,
+                46,
+            )
+        )
+
+        boss_font = (
+            ImageFont.truetype(
+                font_path,
+                28,
+            )
+        )
+
+        member_font = (
+            ImageFont.truetype(
+                font_path,
+                22,
+            )
+        )
+
+        stat_font = (
+            ImageFont.truetype(
+                font_path,
+                17,
+            )
+        )
+
+    else:
+
+        title_font = (
+            ImageFont.load_default()
+        )
+
+        boss_font = (
+            ImageFont.load_default()
+        )
+
+        member_font = (
+            ImageFont.load_default()
+        )
+
+        stat_font = (
+            ImageFont.load_default()
+        )
+
+
+    # =====================================================
+    # 임시 Draw
+    # =====================================================
+    temp_image = Image.new(
+        "RGB",
+        (
+            canvas_width,
+            300,
+        ),
+        (
+            8,
+            15,
+            25,
+        ),
+    )
+
+
+    temp_draw = ImageDraw.Draw(
+        temp_image
+    )
+
+
+    # =====================================================
+    # 닉네임 줄바꿈
+    # =====================================================
+    def wrap_names(
+        text,
+        font,
+        max_width,
+    ):
+
+        names = text.split(
+            " / "
+        )
+
+
+        if not names:
+            return [""]
+
+
+        lines = []
+
+        current = names[0]
+
+
+        for name in names[
+            1:
+        ]:
+
+            candidate = (
+                current
+                + " / "
+                + name
+            )
+
+
+            bbox = temp_draw.textbbox(
+                (
+                    0,
+                    0,
+                ),
+                candidate,
+                font=font,
+            )
+
+
+            width = (
+                bbox[2]
+                - bbox[0]
+            )
+
+
+            if width <= max_width:
+
+                current = (
+                    candidate
+                )
+
+            else:
+
+                lines.append(
+                    current
+                )
+
+                current = name
+
+
+        lines.append(
+            current
+        )
+
+
+        return lines
+
+
+    # =====================================================
+    # 보스 카드 데이터
+    # =====================================================
+    boss_cards = []
+
+
+    usable_text_width = (
+        card_width
+        - 72
+    )
+
+
+    for display_name, boss_data in (
+        completed.items()
+    ):
+
+        party_rows = []
+
+
+        for members in boss_data[
+            "parties"
+        ]:
+
+            if not members:
+                continue
+
+
+            names = [
+
+                character_lookup[
+                    cid
+                ]["nickname"]
+
+                for cid
+                in members
+            ]
+
+
+            member_text = (
+                " / ".join(
+                    names
+                )
+            )
+
+
+            wrapped_lines = wrap_names(
+                member_text,
+                member_font,
+                usable_text_width,
+            )
+
+
+            wrapped_lines = (
+                wrapped_lines[
+                    :2
+                ]
+            )
+
+
+            total_combat, avg_hexa = (
+                calculate_party_stats(
+                    members
+                )
+            )
+
+
+            stat_text = (
+                f"총 전투력 "
+                f"{format_combat_power(total_combat)}"
+                "   ·   "
+                f"평균 헥사환산 "
+                f"{format_hexa(avg_hexa)}"
+            )
+
+
+            if len(
+                wrapped_lines
+            ) == 1:
+
+                row_height = 72
+
+            else:
+
+                row_height = 96
+
+
+            party_rows.append(
+                {
+
+                    "lines":
+                        wrapped_lines,
+
+                    "stat_text":
+                        stat_text,
+
+                    "height":
+                        row_height,
+                }
+            )
+
+
+        if not party_rows:
+            continue
+
+
+        card_height = (
+
+            card_inner_top
+
+            + boss_header_h
+
+            + 14
+
+            + sum(
+                row[
+                    "height"
+                ]
+                for row
+                in party_rows
+            )
+
+            + party_gap
+            * max(
+                0,
+                len(
+                    party_rows
+                ) - 1
+            )
+
+            + card_inner_bottom
+        )
+
+
+        boss_cards.append(
+            {
+
+                "boss_name":
+                    display_name,
+
+                "rows":
+                    party_rows,
+
+                "height":
+                    card_height,
+            }
+        )
+
+
+    if not boss_cards:
+        return None
+
+
+    # =====================================================
+    # 2열 행 높이
+    # =====================================================
+    row_heights = []
+
+
+    for i in range(
+        0,
+        len(
+            boss_cards
+        ),
+        2,
+    ):
+
+        left_height = (
+            boss_cards[
+                i
+            ]["height"]
+        )
+
+
+        if (
+            i + 1
+            < len(
+                boss_cards
+            )
+        ):
+
+            right_height = (
+                boss_cards[
+                    i + 1
+                ]["height"]
+            )
+
+        else:
+
+            right_height = 0
+
+
+        row_heights.append(
+            max(
+                left_height,
+                right_height,
+            )
+        )
+
+
+    # =====================================================
+    # 캔버스 높이
+    # =====================================================
+    canvas_height = (
+
+        top_header_height
+
+        + outer_padding
+
+        + sum(
+            row_heights
+        )
+
+        + card_gap
+        * max(
+            0,
+            len(
+                row_heights
+            ) - 1
+        )
+
+        + outer_padding
+    )
+
+
+    # =====================================================
+    # 캔버스
+    # =====================================================
+    image = Image.new(
+        "RGB",
+        (
+            canvas_width,
+            canvas_height,
+        ),
+        (
+            8,
+            15,
+            25,
+        ),
+    )
+
+
+    draw = ImageDraw.Draw(
+        image
+    )
+
+
+    # =====================================================
+    # HEADER
+    # =====================================================
+    draw.rectangle(
+        [
+            0,
+            0,
+            canvas_width,
+            top_header_height,
+        ],
+        fill=(
+            19,
+            34,
+            55,
+        ),
+    )
+
+
+    draw.text(
+        (
+            60,
+            44,
+        ),
+        "해피하우스 보스 파티 편성표",
+        font=title_font,
+        fill=(
+            245,
+            249,
+            255,
+        ),
+    )
+
+
+    # =====================================================
+    # 카드 그리기
+    # =====================================================
+    def draw_boss_card(
+        x,
+        y,
+        card_data,
+    ):
+
+        card_height = (
+            card_data[
+                "height"
+            ]
+        )
+
+
+        # 외곽
+        draw.rounded_rectangle(
+            [
+                x,
+                y,
+                x + card_width,
+                y + card_height,
+            ],
+            radius=20,
+            fill=(
+                17,
+                28,
+                43,
+            ),
+            outline=(
+                78,
+                118,
+                170,
+            ),
+            width=2,
+        )
+
+
+        # 보스 헤더
+        draw.rounded_rectangle(
+            [
+                x + 16,
+                y + 16,
+                x + card_width - 16,
+                y + 16 + boss_header_h,
+            ],
+            radius=14,
+            fill=(
+                25,
+                40,
+                62,
+            ),
+            outline=(
+                67,
+                111,
+                164,
+            ),
+            width=1,
+        )
+
+
+        draw.text(
+            (
+                x + 34,
+                y + 29,
+            ),
+            card_data[
+                "boss_name"
+            ],
+            font=boss_font,
+            fill=(
+                247,
+                250,
+                255,
+            ),
+        )
+
+
+        current_y = (
+            y
+            + 16
+            + boss_header_h
+            + 14
+        )
+
+
+        for row_data in card_data[
+            "rows"
+        ]:
+
+            row_height = (
+                row_data[
+                    "height"
+                ]
+            )
+
+
+            draw.rounded_rectangle(
+                [
+                    x + 20,
+                    current_y,
+                    x + card_width - 20,
+                    current_y + row_height,
+                ],
+                radius=12,
+                fill=(
+                    13,
+                    23,
+                    36,
+                ),
+                outline=(
+                    43,
+                    64,
+                    91,
+                ),
+                width=1,
+            )
+
+
+            text_x = (
+                x + 36
+            )
+
+            text_y = (
+                current_y
+                + 10
+            )
+
+
+            for line in row_data[
+                "lines"
+            ]:
+
+                draw.text(
+                    (
+                        text_x,
+                        text_y,
+                    ),
+                    line,
+                    font=member_font,
+                    fill=(
+                        228,
+                        237,
+                        249,
+                    ),
+                )
+
+                text_y += 28
+
+
+            stat_y = (
+                current_y
+                + row_height
+                - 26
+            )
+
+
+            draw.text(
+                (
+                    text_x,
+                    stat_y,
+                ),
+                row_data[
+                    "stat_text"
+                ],
+                font=stat_font,
+                fill=(
+                    132,
+                    154,
+                    183,
+                ),
+            )
+
+
+            current_y += (
+                row_height
+                + party_gap
+            )
+
+
+    # =====================================================
+    # 2열 배치
+    # =====================================================
+    current_y = (
+        top_header_height
+        + outer_padding
+    )
+
+
+    card_index = 0
+
+
+    for row_height in row_heights:
+
+        left_x = (
+            outer_padding
+        )
+
+
+        draw_boss_card(
+            left_x,
+            current_y,
+            boss_cards[
+                card_index
+            ],
+        )
+
+
+        card_index += 1
+
+
+        if (
+            card_index
+            < len(
+                boss_cards
+            )
+        ):
+
+            right_x = (
+                outer_padding
+                + card_width
+                + card_gap
+            )
+
+
+            draw_boss_card(
+                right_x,
+                current_y,
+                boss_cards[
+                    card_index
+                ],
+            )
+
+
+            card_index += 1
+
+
+        current_y += (
+            row_height
+            + card_gap
+        )
+
+
+    # =====================================================
+    # PNG
+    # =====================================================
+    buffer = BytesIO()
+
+
+    image.save(
+        buffer,
+        format="PNG",
+        optimize=True,
+    )
+
+
+    buffer.seek(
+        0
+    )
+
+
+    return buffer.getvalue()
+
+
+# =========================================================
+# 메인 메뉴
+# =========================================================
+page = st.radio(
+    "메뉴",
+    [
+        "👥 캐릭터 목록",
+        "⚔️ 보스 파티 만들기",
+    ],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="main_page",
+)
+
+
+# =========================================================
+# 캐릭터 목록
+# =========================================================
+if page == "👥 캐릭터 목록":
+
+    server_values = []
+
+
+    if "서버" in df.columns:
+
+        for value in df[
+            "서버"
+        ].tolist():
+
+            value = clean(
+                value
+            )
+
+            if (
+                value
+                and value
+                not in server_values
+            ):
+
+                server_values.append(
+                    value
+                )
+
+
+    filter_labels = [
+        f"전체 ({len(df)})"
+    ]
+
+
+    filter_map = {
+        f"전체 ({len(df)})":
+            "전체"
+    }
+
+
+    for server in server_values:
+
+        count = (
+            df["서버"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .eq(server)
+            .sum()
+        )
+
+
+        label = (
+            f"{server} ({count})"
+        )
+
+
+        filter_labels.append(
+            label
+        )
+
+
+        filter_map[
+            label
+        ] = server
+
+
+    selected_label = st.radio(
+        "서버별 보기",
+        filter_labels,
+        horizontal=True,
+        key="server_filter",
+    )
+
+
+    selected_server = (
+        filter_map[
+            selected_label
+        ]
+    )
+
+
+    if selected_server == "전체":
+
+        filtered_df = (
+            df.copy()
+        )
+
+    else:
+
+        filtered_df = df[
+            df["서버"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            == selected_server
+        ].copy()
+
+
+    CARDS_PER_ROW = 3
+
+
+    for start in range(
+        0,
+        len(
+            filtered_df
+        ),
+        CARDS_PER_ROW,
+    ):
+
+        cols = st.columns(
+            CARDS_PER_ROW,
+            gap="medium",
+        )
+
+
+        rows = filtered_df.iloc[
+            start:
+            start
+            + CARDS_PER_ROW
+        ]
+
+
+        for col, (
+            _,
+            row,
+        ) in zip(
+            cols,
+            rows.iterrows(),
+        ):
+
+            with col:
+
+                st.markdown(
+                    build_card(
+                        row
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+
+                boss_url = clean(
+                    row.get(
+                        "보스배율캡처URL",
+                        "",
                     )
-
-                    if boss_image:
-
-                        st.image(
-                            BytesIO(boss_image),
-                            use_container_width=True
-                        )
-
-                    else:
-
-                        st.warning(
-                            "보스배율 이미지를 불러오지 못했습니다."
-                        )
-
-            else:
-
-                st.caption(
-                    "보스배율 캡처 없음"
                 )
 
 
-            # -----------------------------------------
-            # 환산주스탯
-            # 상세사이트만 외부 이동
-            # -----------------------------------------
-            stat_url = get_stat_url(
-                row
-            )
+                if boss_url:
 
-            if stat_url:
+                    with st.expander(
+                        "📊 보스배율 보기",
+                        expanded=False,
+                    ):
 
-                st.link_button(
-                    "🔎 환산주스탯 보기",
-                    stat_url,
-                    use_container_width=True
-                )
-
-            else:
-
-                st.button(
-                    "환산주스탯 링크 없음",
-                    disabled=True,
-                    use_container_width=True,
-                    key=(
-                        "nostat_"
-                        + clean(
-                            row.get(
-                                "닉네임",
-                                ""
+                        boss_image = (
+                            load_image_bytes(
+                                boss_url
                             )
                         )
+
+
+                        if boss_image:
+
+                            st.image(
+                                BytesIO(
+                                    boss_image
+                                ),
+                                use_container_width=True,
+                            )
+
+                        else:
+
+                            st.warning(
+                                "이미지를 불러오지 못했습니다."
+                            )
+
+
+                st.write("")
+
+
+# =========================================================
+# 보스 파티 만들기
+# =========================================================
+else:
+
+    if (
+        "party_completed_message"
+        in st.session_state
+    ):
+
+        st.success(
+            st.session_state[
+                "party_completed_message"
+            ]
+        )
+
+
+        del st.session_state[
+            "party_completed_message"
+        ]
+
+
+    st.markdown(
+        """
+<div class="party-page-title">
+⚔️ 보스 파티 만들기
+</div>
+
+<div class="party-description">
+보스와 난이도를 선택한 뒤 파티를 편성하세요.
+한 보스 편성이 끝나면 완료 처리한 뒤 다음 보스를 계속 편성할 수 있습니다.
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+    # =====================================================
+    # 보스 / 난이도 / 파티 수
+    # =====================================================
+    boss_col, difficulty_col, count_col = (
+        st.columns(
+            [
+                2,
+                1,
+                1,
+            ]
+        )
+    )
+
+
+    with boss_col:
+
+        selected_boss = st.selectbox(
+            "보스",
+            options=list(
+                BOSS_DIFFICULTIES.keys()
+            ),
+            key="party_boss_name",
+        )
+
+
+    # 보스를 바꿨는데 기존 난이도가
+    # 새 보스에 존재하지 않을 경우 제거
+    difficulty_options = (
+        BOSS_DIFFICULTIES[
+            selected_boss
+        ]
+    )
+
+
+    if (
+        "party_boss_difficulty"
+        in st.session_state
+    ):
+
+        if (
+            st.session_state[
+                "party_boss_difficulty"
+            ]
+            not in difficulty_options
+        ):
+
+            del st.session_state[
+                "party_boss_difficulty"
+            ]
+
+
+    with difficulty_col:
+
+        st.selectbox(
+            "난이도",
+            options=difficulty_options,
+            key="party_boss_difficulty",
+        )
+
+
+    with count_col:
+
+        st.selectbox(
+            "파티 수",
+            options=list(
+                range(
+                    1,
+                    11,
+                )
+            ),
+            key="party_count",
+        )
+
+
+    st.divider()
+
+
+    selected_in_previous_parties = set()
+
+
+    # =====================================================
+    # 파티 1~10
+    # =====================================================
+    for party_number in range(
+        1,
+        st.session_state.party_count
+        + 1,
+    ):
+
+        key = (
+            f"party_members_"
+            f"{party_number}"
+        )
+
+
+        current_value = list(
+            st.session_state.get(
+                key,
+                [],
+            )
+        )
+
+
+        cleaned_value = [
+
+            cid
+
+            for cid
+            in current_value
+
+            if cid
+            not in selected_in_previous_parties
+        ]
+
+
+        if (
+            current_value
+            != cleaned_value
+        ):
+
+            st.session_state[
+                key
+            ] = cleaned_value
+
+
+        available_ids = [
+
+            cid
+
+            for cid
+            in all_character_ids
+
+            if (
+                cid
+                not in selected_in_previous_parties
+
+                or cid
+                in cleaned_value
+            )
+        ]
+
+
+        st.markdown(
+            f"""
+<div class="party-section-title">
+{party_number}파티
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+
+        selected_members = (
+            st.multiselect(
+                f"{party_number}파티",
+                options=available_ids,
+                format_func=character_option_text,
+                key=key,
+                max_selections=6,
+                placeholder="파티원을 선택하세요",
+                label_visibility="collapsed",
+            )
+        )
+
+
+        selected_in_previous_parties.update(
+            selected_members
+        )
+
+
+        # 통계만 표시
+        if selected_members:
+
+            total_combat, avg_hexa = (
+                calculate_party_stats(
+                    selected_members
+                )
+            )
+
+
+            m1, m2, m3 = (
+                st.columns(
+                    3
+                )
+            )
+
+
+            with m1:
+
+                st.metric(
+                    "인원",
+                    f"{len(selected_members)}명",
+                )
+
+
+            with m2:
+
+                st.metric(
+                    "총 전투력",
+                    format_combat_power(
+                        total_combat
+                    ),
+                )
+
+
+            with m3:
+
+                st.metric(
+                    "평균 헥사환산",
+                    format_hexa(
+                        avg_hexa
+                    ),
+                )
+
+
+    # =====================================================
+    # 현재 보스 편성 완료
+    # =====================================================
+    st.write("")
+
+
+    if st.button(
+        "✅ 이 보스 편성 완료",
+        use_container_width=True,
+        type="primary",
+        key="complete_current_boss",
+    ):
+
+        success, result = (
+            save_current_boss()
+        )
+
+
+        if success:
+
+            display_name = (
+                result
+            )
+
+
+            st.session_state[
+                "pending_clear_party_editor"
+            ] = True
+
+
+            st.session_state[
+                "party_completed_message"
+            ] = (
+                f"{display_name} 편성이 완료되었습니다."
+            )
+
+
+            st.rerun()
+
+        else:
+
+            st.warning(
+                result
+            )
+
+
+    # =====================================================
+    # 완료된 보스
+    # =====================================================
+    if (
+        st.session_state
+        .completed_bosses
+    ):
+
+        st.divider()
+
+
+        st.markdown(
+            """
+<div class="party-section-title">
+📚 완료된 보스 편성
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+
+        completed_items = list(
+            st.session_state
+            .completed_bosses
+            .items()
+        )
+
+
+        for index, (
+            display_name,
+            boss_data,
+        ) in enumerate(
+            completed_items
+        ):
+
+            used_parties = sum(
+
+                1
+
+                for party
+                in boss_data[
+                    "parties"
+                ]
+
+                if party
+            )
+
+
+            member_count = sum(
+
+                len(
+                    party
+                )
+
+                for party
+                in boss_data[
+                    "parties"
+                ]
+            )
+
+
+            st.markdown(
+                f"""
+<div class="completed-boss">
+
+<div class="completed-boss-title">
+⚔️ {html.escape(display_name)}
+</div>
+
+<div class="completed-boss-info">
+{used_parties}개 파티 · 총 편성 {member_count}명
+</div>
+
+</div>
+""",
+                unsafe_allow_html=True,
+            )
+
+
+            c1, c2 = st.columns(
+                2
+            )
+
+
+            with c1:
+
+                if st.button(
+                    "✏️ 불러오기 / 수정",
+                    key=(
+                        f"load_boss_"
+                        f"{index}"
+                    ),
+                    use_container_width=True,
+                ):
+
+                    st.session_state[
+                        "pending_load_boss"
+                    ] = display_name
+
+                    st.rerun()
+
+
+            with c2:
+
+                if st.button(
+                    "🗑️ 삭제",
+                    key=(
+                        f"delete_boss_"
+                        f"{index}"
+                    ),
+                    use_container_width=True,
+                ):
+
+                    del (
+                        st.session_state
+                        .completed_bosses[
+                            display_name
+                        ]
+                    )
+
+
+                    st.session_state[
+                        "show_final_result"
+                    ] = False
+
+
+                    st.rerun()
+
+
+        # =================================================
+        # 전체 완료
+        # =================================================
+        st.divider()
+
+
+        if st.button(
+            "🏁 전체 파티 구성 완료",
+            type="primary",
+            use_container_width=True,
+            key="finish_all_parties",
+        ):
+
+            st.session_state[
+                "show_final_result"
+            ] = True
+
+            st.rerun()
+
+
+    # =====================================================
+    # 최종 결과
+    # =====================================================
+    if (
+        st.session_state
+        .show_final_result
+
+        and
+
+        st.session_state
+        .completed_bosses
+    ):
+
+        st.divider()
+
+
+        st.markdown(
+            """
+<div class="party-page-title">
+🏆 해피하우스 보스 파티 편성표
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+
+        for display_name, boss_data in (
+            st.session_state
+            .completed_bosses
+            .items()
+        ):
+
+            final_html = (
+                '<div class="final-boss-card">'
+                '<div class="final-boss-name">'
+                f'⚔️ {html.escape(display_name)}'
+                '</div>'
+            )
+
+
+            for members in boss_data[
+                "parties"
+            ]:
+
+                if not members:
+                    continue
+
+
+                names = [
+
+                    html.escape(
+                        character_lookup[
+                            cid
+                        ]["nickname"]
+                    )
+
+                    for cid
+                    in members
+                ]
+
+
+                total_combat, avg_hexa = (
+                    calculate_party_stats(
+                        members
                     )
                 )
 
-            # 카드 사이 간격
-            st.write("")
+
+                final_html += (
+                    '<div class="final-party-line">'
+                    + " / ".join(
+                        names
+                    )
+                    + '<div class="final-party-stat">'
+                    f'총 전투력 '
+                    f'{format_combat_power(total_combat)}'
+                    '&nbsp;&nbsp;·&nbsp;&nbsp;'
+                    f'평균 헥사 '
+                    f'{format_hexa(avg_hexa)}'
+                    '</div>'
+                    '</div>'
+                )
+
+
+            final_html += (
+                "</div>"
+            )
+
+
+            st.markdown(
+                final_html,
+                unsafe_allow_html=True,
+            )
+
+
+        # =================================================
+        # 텍스트
+        # =================================================
+        final_text = (
+            build_final_text()
+        )
+
+
+        with st.expander(
+            "📋 텍스트 결과 보기"
+        ):
+
+            st.code(
+                final_text,
+                language=None,
+            )
+
+
+        # =================================================
+        # PNG
+        # =================================================
+        png_bytes = (
+            make_party_image()
+        )
+
+
+        if png_bytes:
+
+            st.image(
+                png_bytes,
+                caption=(
+                    "최종 파티 편성 이미지"
+                ),
+                use_container_width=True,
+            )
+
+
+            st.download_button(
+                "🖼️ 파티 편성표 이미지 저장",
+                data=png_bytes,
+                file_name=(
+                    "해피하우스_보스파티_편성표.png"
+                ),
+                mime="image/png",
+                use_container_width=True,
+            )
