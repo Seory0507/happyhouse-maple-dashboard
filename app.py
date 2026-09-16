@@ -29,7 +29,7 @@ st.set_page_config(
 
 # =========================================================
 # 보스 / 난이도
-# 네가 순서를 따로 바꿨다면 이 블록만 네 현재 순서로 유지
+# 네가 순서를 바꿨다면 이 부분의 순서만 기존 것을 유지
 # =========================================================
 BOSS_DIFFICULTIES = {
     "스우": ["노멀", "하드", "익스트림"],
@@ -172,9 +172,14 @@ def local_image_base64(path):
             ".gif": "image/gif",
         }.get(ext, "image/png")
 
-        encoded = base64.b64encode(data).decode("utf-8")
+        encoded = base64.b64encode(
+            data
+        ).decode("utf-8")
 
-        return f"data:{mime};base64,{encoded}"
+        return (
+            f"data:{mime};base64,"
+            f"{encoded}"
+        )
 
     except Exception:
         return ""
@@ -594,7 +599,7 @@ def save_boss_hopes(
 
 
 # =========================================================
-# 환산주스탯 URL
+# 환산 URL
 # =========================================================
 def get_stat_url(row):
     for col in [
@@ -639,19 +644,13 @@ def rank_html(rank):
         return ""
 
     if num == 1:
-        path = (
-            "assets/rank_gold.png"
-        )
+        path = "assets/rank_gold.png"
 
     elif num == 2:
-        path = (
-            "assets/rank_silver.png"
-        )
+        path = "assets/rank_silver.png"
 
     elif num == 3:
-        path = (
-            "assets/rank_bronze.png"
-        )
+        path = "assets/rank_bronze.png"
 
     else:
         return (
@@ -673,7 +672,8 @@ def rank_html(rank):
 
     return (
         '<div class="rank-image-wrap">'
-        f'<img src="{image}" class="rank-image">'
+        f'<img src="{image}" '
+        'class="rank-image">'
         f'<span>{num}위</span>'
         '</div>'
     )
@@ -751,9 +751,7 @@ def find_korean_font(
 
         if bold:
             for filename in font_files:
-                lower_name = (
-                    filename.lower()
-                )
+                lower_name = filename.lower()
 
                 if (
                     "noto"
@@ -768,11 +766,7 @@ def find_korean_font(
                     )
 
         for filename in font_files:
-            lower_name = (
-                filename.lower()
-            )
-
-            if "noto" in lower_name:
+            if "noto" in filename.lower():
                 return os.path.join(
                     font_dir,
                     filename,
@@ -788,34 +782,26 @@ def find_korean_font(
 
 
 def load_party_fonts():
-    regular_path = (
-        find_korean_font(
-            bold=False
-        )
+    regular_path = find_korean_font(
+        bold=False
     )
 
     bold_path = (
         find_korean_font(
             bold=True
         )
+        or regular_path
     )
-
-    if not bold_path:
-        bold_path = (
-            regular_path
-        )
 
     if regular_path:
         try:
             return (
                 ImageFont.truetype(
-                    bold_path
-                    or regular_path,
+                    bold_path,
                     46,
                 ),
                 ImageFont.truetype(
-                    bold_path
-                    or regular_path,
+                    bold_path,
                     28,
                 ),
                 ImageFont.truetype(
@@ -840,10 +826,8 @@ def load_party_fonts():
 
 
 def load_character_card_fonts():
-    regular_path = (
-        find_korean_font(
-            bold=False
-        )
+    regular_path = find_korean_font(
+        bold=False
     )
 
     bold_path = (
@@ -859,75 +843,73 @@ def load_character_card_fonts():
                 "rank":
                     ImageFont.truetype(
                         bold_path,
-                        18,
+                        17,
                     ),
 
                 "nickname":
                     ImageFont.truetype(
                         bold_path,
-                        34,
+                        31,
                     ),
 
                 "name":
                     ImageFont.truetype(
                         regular_path,
-                        19,
+                        17,
                     ),
 
                 "chip":
                     ImageFont.truetype(
                         regular_path,
-                        18,
-                    ),
-
-                "stat_label":
-                    ImageFont.truetype(
-                        regular_path,
-                        18,
-                    ),
-
-                "stat_value":
-                    ImageFont.truetype(
-                        bold_path,
-                        27,
-                    ),
-
-                "section":
-                    ImageFont.truetype(
-                        bold_path,
-                        20,
-                    ),
-
-                "boss":
-                    ImageFont.truetype(
-                        regular_path,
-                        18,
+                        16,
                     ),
 
                 "level":
                     ImageFont.truetype(
                         regular_path,
+                        16,
+                    ),
+
+                "stat_label":
+                    ImageFont.truetype(
+                        regular_path,
+                        15,
+                    ),
+
+                "stat_value":
+                    ImageFont.truetype(
+                        bold_path,
+                        25,
+                    ),
+
+                "section":
+                    ImageFont.truetype(
+                        bold_path,
                         18,
+                    ),
+
+                "boss":
+                    ImageFont.truetype(
+                        regular_path,
+                        17,
                     ),
             }
 
         except Exception:
             pass
 
-    default = (
-        ImageFont.load_default()
-    )
+    default = ImageFont.load_default()
 
     return {
         "rank": default,
         "nickname": default,
         "name": default,
         "chip": default,
+        "level": default,
         "stat_label": default,
         "stat_value": default,
         "section": default,
         "boss": default,
-        "level": default,
     }
 
 
@@ -1722,7 +1704,6 @@ for _, hope_row in boss_hope_df.iterrows():
 
 # =========================================================
 # BOSS HOPE HTML
-# 절대 여러 줄 Markdown 문자열을 사용하지 않음
 # =========================================================
 def boss_hope_html(nickname):
     hopes = boss_hope_lookup.get(
@@ -1786,8 +1767,7 @@ def boss_hope_html(nickname):
 
 
 # =========================================================
-# CHARACTER CARD
-# 핵심 수정: HTML을 한 줄 문자열로 조립
+# CHARACTER CARD HTML
 # =========================================================
 def build_card(row):
     rank = clean(
@@ -1917,66 +1897,64 @@ def build_card(row):
         nickname_raw
     )
 
-    html_parts = [
-        f'<div class="character-card {rank_card_class(rank)}">',
-
-        '<div class="card-top">',
-        rank_html(rank),
-        '</div>',
-
-        '<div class="card-main">',
-
-        '<div class="character-image-box">',
-        image_html,
-        '</div>',
-
-        '<div>',
-
-        f'<div class="nickname">{nickname}</div>',
-        f'<div class="realname">{name}</div>',
-
-        '<div class="job-row">',
-
-        f'<span class="job-chip">{job}</span>',
-
-        '<div class="right-meta">',
-        stat_link_html,
-        server_html,
-        f'<span class="level">Lv. {level}</span>',
-        '</div>',
-
-        '</div>',
-
-        '<div class="stats-row">',
-
-        '<div class="stat-box">',
-        '<div class="stat-label">전투력</div>',
-        f'<div class="stat-value">{combat_text}</div>',
-        '</div>',
-
-        '<div class="stat-box">',
-        '<div class="stat-label">헥사환산</div>',
-        f'<div class="stat-value">{hexa_text}</div>',
-        '</div>',
-
-        '</div>',
-
-        hope_html,
-
-        '</div>',
-
-        '</div>',
-
-        '</div>',
-    ]
-
     return "".join(
-        html_parts
+        [
+            f'<div class="character-card {rank_card_class(rank)}">',
+
+            '<div class="card-top">',
+            rank_html(rank),
+            '</div>',
+
+            '<div class="card-main">',
+
+            '<div class="character-image-box">',
+            image_html,
+            '</div>',
+
+            '<div>',
+
+            f'<div class="nickname">{nickname}</div>',
+            f'<div class="realname">{name}</div>',
+
+            '<div class="job-row">',
+
+            f'<span class="job-chip">{job}</span>',
+
+            '<div class="right-meta">',
+            stat_link_html,
+            server_html,
+            f'<span class="level">Lv. {level}</span>',
+            '</div>',
+
+            '</div>',
+
+            '<div class="stats-row">',
+
+            '<div class="stat-box">',
+            '<div class="stat-label">전투력</div>',
+            f'<div class="stat-value">{combat_text}</div>',
+            '</div>',
+
+            '<div class="stat-box">',
+            '<div class="stat-label">헥사환산</div>',
+            f'<div class="stat-value">{hexa_text}</div>',
+            '</div>',
+
+            '</div>',
+
+            hope_html,
+
+            '</div>',
+
+            '</div>',
+
+            '</div>',
+        ]
     )
 
 
 # =========================================================
-# 캐릭터 카드 PNG
+# 저장용 캐릭터 이미지 관련
 # =========================================================
 def open_character_image_for_render(
     row
@@ -2103,6 +2081,59 @@ def paste_center(
     )
 
 
+def load_rank_icon_for_png(
+    rank_value
+):
+    path = ""
+
+    if rank_value == 1:
+        path = (
+            "assets/rank_gold.png"
+        )
+
+    elif rank_value == 2:
+        path = (
+            "assets/rank_silver.png"
+        )
+
+    elif rank_value == 3:
+        path = (
+            "assets/rank_bronze.png"
+        )
+
+    if (
+        not path
+        or
+        not os.path.exists(path)
+    ):
+        return None
+
+    try:
+        image = (
+            Image.open(
+                path
+            )
+            .convert(
+                "RGBA"
+            )
+        )
+
+        return (
+            resize_image_keep_ratio(
+                image,
+                34,
+                34,
+            )
+        )
+
+    except Exception:
+        return None
+
+
+# =========================================================
+# 저장용 캐릭터 카드 PNG
+# 이번 버전의 핵심 디자인 수정
+# =========================================================
 def build_character_card_image(
     row
 ):
@@ -2177,124 +2208,149 @@ def build_character_card_image(
         )
     )
 
-    width = 1000
 
-    hope_count = max(
+    # -----------------------------------------------------
+    # 카드 크기
+    # 기존 1000px보다 좁게 만들어 카드 느낌 강화
+    # -----------------------------------------------------
+    width = 860
+
+    boss_count = max(
         1,
         len(hopes),
     )
 
     height = (
-        575
-        + hope_count * 34
+        505
+        + boss_count * 34
     )
 
-    img = Image.new(
+
+    # -----------------------------------------------------
+    # 배경
+    # -----------------------------------------------------
+    image = Image.new(
         "RGBA",
         (
             width,
             height,
         ),
         (
-            8,
-            14,
-            23,
+            7,
+            13,
+            22,
             255,
         ),
     )
 
     draw = ImageDraw.Draw(
-        img
+        image
     )
 
+
+    # -----------------------------------------------------
+    # 메인 카드
+    # -----------------------------------------------------
     draw.rounded_rectangle(
         [
-            20,
-            20,
-            width - 20,
-            height - 20,
+            18,
+            18,
+            width - 18,
+            height - 18,
         ],
-        radius=28,
+        radius=25,
         fill=(
             18,
-            29,
-            45,
+            30,
+            47,
             255,
         ),
         outline=(
-            96,
-            132,
-            182,
-            100,
+            91,
+            143,
+            205,
+            210,
         ),
         width=2,
     )
 
+
+    # -----------------------------------------------------
+    # 순위
+    # -----------------------------------------------------
     rank_value = rank_num(
         rank
     )
 
-    rank_text = (
-        f"{rank_value}위"
-        if rank_value is not None
-        else ""
+    rank_icon = (
+        load_rank_icon_for_png(
+            rank_value
+        )
     )
 
-    rank_color = (
-        225,
-        233,
-        245,
-        255,
-    )
-
-    if rank_value == 1:
-        rank_color = (
-            236,
-            202,
-            96,
-            255,
+    if rank_icon is not None:
+        image.alpha_composite(
+            rank_icon,
+            (
+                42,
+                37,
+            ),
         )
 
-    elif rank_value == 2:
-        rank_color = (
-            197,
-            210,
-            228,
-            255,
+        draw.text(
+            (
+                81,
+                43,
+            ),
+            f"{rank_value}위",
+            font=fonts[
+                "rank"
+            ],
+            fill=(
+                225,
+                233,
+                245,
+                255,
+            ),
         )
 
-    elif rank_value == 3:
-        rank_color = (
-            204,
-            142,
-            112,
-            255,
+    elif rank_value is not None:
+        draw.text(
+            (
+                42,
+                43,
+            ),
+            f"{rank_value}위",
+            font=fonts[
+                "rank"
+            ],
+            fill=(
+                225,
+                233,
+                245,
+                255,
+            ),
         )
 
-    draw.text(
-        (
-            48,
-            45,
-        ),
-        rank_text,
-        font=fonts[
-            "rank"
-        ],
-        fill=rank_color,
-    )
+
+    # -----------------------------------------------------
+    # 캐릭터 이미지 영역
+    # -----------------------------------------------------
+    character_center_x = 155
+    character_center_y = 205
 
     draw.ellipse(
         [
-            90,
-            145,
-            290,
-            345,
+            76,
+            126,
+            234,
+            284,
         ],
         fill=(
-            42,
-            69,
-            105,
-            80,
+            50,
+            82,
+            122,
+            130,
         ),
     )
 
@@ -2308,26 +2364,265 @@ def build_character_card_image(
         char_img = (
             resize_image_keep_ratio(
                 char_img,
-                250,
-                270,
+                205,
+                225,
             )
         )
 
         paste_center(
-            img,
+            image,
             char_img,
-            190,
-            250,
+            character_center_x,
+            character_center_y,
         )
 
+
+    # -----------------------------------------------------
+    # 오른쪽 프로필 정보 시작점
+    # -----------------------------------------------------
+    info_x = 285
+
+
+    # 닉네임
     draw.text(
         (
-            370,
-            90,
+            info_x,
+            83,
         ),
         nickname,
         font=fonts[
             "nickname"
+        ],
+        fill=(
+            248,
+            250,
+            255,
+            255,
+        ),
+    )
+
+
+    # 이름
+    draw.text(
+        (
+            info_x + 2,
+            128,
+        ),
+        realname,
+        font=fonts[
+            "name"
+        ],
+        fill=(
+            145,
+            164,
+            190,
+            255,
+        ),
+    )
+
+
+    # -----------------------------------------------------
+    # 직업 칩
+    # -----------------------------------------------------
+    chip_top = 169
+
+    job_bbox = draw.textbbox(
+        (
+            0,
+            0,
+        ),
+        job,
+        font=fonts[
+            "chip"
+        ],
+    )
+
+    job_width = (
+        job_bbox[2]
+        - job_bbox[0]
+        + 26
+    )
+
+    draw.rounded_rectangle(
+        [
+            info_x,
+            chip_top,
+            info_x + job_width,
+            chip_top + 34,
+        ],
+        radius=9,
+        fill=(
+            44,
+            67,
+            97,
+            210,
+        ),
+        outline=(
+            92,
+            133,
+            185,
+            150,
+        ),
+        width=1,
+    )
+
+    draw.text(
+        (
+            info_x + 13,
+            chip_top + 6,
+        ),
+        job,
+        font=fonts[
+            "chip"
+        ],
+        fill=(
+            231,
+            239,
+            250,
+            255,
+        ),
+    )
+
+
+    # -----------------------------------------------------
+    # 서버 칩
+    # -----------------------------------------------------
+    meta_x = 620
+
+    if server:
+        server_bbox = draw.textbbox(
+            (
+                0,
+                0,
+            ),
+            server,
+            font=fonts[
+                "chip"
+            ],
+        )
+
+        server_width = (
+            server_bbox[2]
+            - server_bbox[0]
+            + 24
+        )
+
+        draw.rounded_rectangle(
+            [
+                meta_x,
+                chip_top,
+                meta_x + server_width,
+                chip_top + 33,
+            ],
+            radius=9,
+            fill=(
+                38,
+                55,
+                79,
+                205,
+            ),
+            outline=(
+                91,
+                127,
+                173,
+                120,
+            ),
+            width=1,
+        )
+
+        draw.text(
+            (
+                meta_x + 12,
+                chip_top + 6,
+            ),
+            server,
+            font=fonts[
+                "chip"
+            ],
+            fill=(
+                188,
+                211,
+                239,
+                255,
+            ),
+        )
+
+
+    # 레벨
+    draw.text(
+        (
+            meta_x,
+            212,
+        ),
+        f"Lv. {level}",
+        font=fonts[
+            "level"
+        ],
+        fill=(
+            206,
+            217,
+            232,
+            255,
+        ),
+    )
+
+
+    # -----------------------------------------------------
+    # 스탯 구역
+    # -----------------------------------------------------
+    stat_top = 260
+
+    draw.line(
+        (
+            info_x,
+            stat_top,
+            805,
+            stat_top,
+        ),
+        fill=(
+            76,
+            102,
+            136,
+            110,
+        ),
+        width=1,
+    )
+
+    stat_left_x = (
+        info_x
+    )
+
+    stat_right_x = (
+        550
+    )
+
+
+    # 전투력
+    draw.text(
+        (
+            stat_left_x,
+            stat_top + 20,
+        ),
+        "전투력",
+        font=fonts[
+            "stat_label"
+        ],
+        fill=(
+            128,
+            147,
+            173,
+            255,
+        ),
+    )
+
+    draw.text(
+        (
+            stat_left_x,
+            stat_top + 48,
+        ),
+        combat_text,
+        font=fonts[
+            "stat_value"
         ],
         fill=(
             247,
@@ -2337,136 +2632,38 @@ def build_character_card_image(
         ),
     )
 
-    draw.text(
-        (
-            372,
-            140,
-        ),
-        realname,
-        font=fonts[
-            "name"
-        ],
-        fill=(
-            151,
-            168,
-            193,
-            255,
-        ),
-    )
 
-    draw.text(
-        (
-            372,
-            190,
-        ),
-        job,
-        font=fonts[
-            "chip"
-        ],
-        fill=(
-            226,
-            236,
-            249,
-            255,
-        ),
-    )
-
-    draw.text(
-        (
-            720,
-            190,
-        ),
-        server,
-        font=fonts[
-            "chip"
-        ],
-        fill=(
-            188,
-            209,
-            236,
-            255,
-        ),
-    )
-
-    draw.text(
-        (
-            720,
-            225,
-        ),
-        f"Lv. {level}",
-        font=fonts[
-            "level"
-        ],
-        fill=(
-            207,
-            218,
-            232,
-            255,
-        ),
-    )
-
+    # 세로 구분선
     draw.line(
         (
-            370,
-            270,
-            940,
-            270,
+            520,
+            stat_top + 15,
+            520,
+            stat_top + 83,
         ),
         fill=(
             76,
-            99,
-            131,
-            100,
+            102,
+            136,
+            85,
         ),
         width=1,
     )
 
-    draw.text(
-        (
-            370,
-            290,
-        ),
-        "전투력",
-        font=fonts[
-            "stat_label"
-        ],
-        fill=(
-            131,
-            148,
-            173,
-            255,
-        ),
-    )
 
+    # 헥사
     draw.text(
         (
-            370,
-            325,
-        ),
-        combat_text,
-        font=fonts[
-            "stat_value"
-        ],
-        fill=(
-            246,
-            248,
-            254,
-            255,
-        ),
-    )
-
-    draw.text(
-        (
-            670,
-            290,
+            stat_right_x,
+            stat_top + 20,
         ),
         "헥사환산",
         font=fonts[
             "stat_label"
         ],
         fill=(
-            131,
-            148,
+            128,
+            147,
             173,
             255,
         ),
@@ -2474,67 +2671,100 @@ def build_character_card_image(
 
     draw.text(
         (
-            670,
-            325,
+            stat_right_x,
+            stat_top + 48,
         ),
         hexa_text,
         font=fonts[
             "stat_value"
         ],
         fill=(
-            246,
-            248,
-            254,
+            247,
+            249,
+            255,
             255,
         ),
     )
 
+
+    # -----------------------------------------------------
+    # 보스희망 영역
+    # -----------------------------------------------------
+    boss_section_y = 365
+
     draw.line(
         (
-            50,
-            410,
-            950,
-            410,
+            42,
+            boss_section_y,
+            width - 42,
+            boss_section_y,
         ),
         fill=(
             76,
-            99,
-            131,
+            102,
+            136,
             100,
         ),
         width=1,
     )
 
+
     draw.text(
         (
-            55,
-            430,
+            46,
+            boss_section_y + 20,
         ),
         "가고 싶은 보스",
         font=fonts[
             "section"
         ],
         fill=(
-            158,
-            179,
-            205,
+            164,
+            187,
+            216,
             255,
         ),
     )
 
-    boss_y = 475
+
+    boss_y = (
+        boss_section_y
+        + 61
+    )
+
 
     if hopes:
         for hope in hopes:
+            difficulty = clean(
+                hope.get(
+                    "난이도",
+                    "",
+                )
+            )
+
+            boss = clean(
+                hope.get(
+                    "보스",
+                    "",
+                )
+            )
+
+            people = int(
+                hope.get(
+                    "인원",
+                    1,
+                )
+            )
+
             line = (
-                f'{hope["난이도"]} '
-                f'{hope["보스"]} '
-                f'· {int(hope["인원"])}인'
+                f"{difficulty} "
+                f"{boss} · "
+                f"{people}인"
             )
 
             draw.text(
                 (
-                    58,
+                    50,
                     boss_y,
                 ),
                 line,
@@ -2542,8 +2772,8 @@ def build_character_card_image(
                     "boss"
                 ],
                 fill=(
-                    226,
-                    236,
+                    229,
+                    237,
                     248,
                     255,
                 ),
@@ -2554,7 +2784,7 @@ def build_character_card_image(
     else:
         draw.text(
             (
-                58,
+                50,
                 boss_y,
             ),
             "등록된 보스가 없습니다.",
@@ -2562,16 +2792,20 @@ def build_character_card_image(
                 "boss"
             ],
             fill=(
-                120,
-                140,
-                166,
+                117,
+                138,
+                165,
                 255,
             ),
         )
 
+
+    # -----------------------------------------------------
+    # PNG 출력
+    # -----------------------------------------------------
     output = BytesIO()
 
-    img.convert(
+    image.convert(
         "RGB"
     ).save(
         output,
@@ -3295,7 +3529,7 @@ def render_hope_editor(
 
 
 # =========================================================
-# PARTY FUNCTIONS
+# 파티 관련
 # =========================================================
 def character_option_text(cid):
     data = character_lookup[
@@ -3352,7 +3586,7 @@ def calculate_party_stats(
 
 
 # =========================================================
-# PARTY SESSION
+# 파티 SESSION
 # =========================================================
 if (
     "completed_bosses"
@@ -3729,9 +3963,7 @@ def make_party_image():
             )
 
             if width <= max_width:
-                current = (
-                    candidate
-                )
+                current = candidate
 
             else:
                 lines.append(
@@ -4069,10 +4301,7 @@ def make_party_image():
                 width=1,
             )
 
-            text_x = (
-                x + 36
-            )
-
+            text_x = x + 36
             text_y = (
                 current_y
                 + 10
@@ -4342,21 +4571,14 @@ if page == "👥 캐릭터 목록":
                     )
                 )
 
-                # =========================================
-                # 캐릭터 카드
-                # =========================================
-                card_html = build_card(
-                    row
-                )
-
                 st.markdown(
-                    card_html,
+                    build_card(
+                        row
+                    ),
                     unsafe_allow_html=True,
                 )
 
-                # =========================================
-                # 카드 기능 버튼
-                # =========================================
+                # 카드 바로 아래 버튼 2개
                 button_col1, button_col2 = (
                     st.columns(
                         2
@@ -4413,9 +4635,6 @@ if page == "👥 캐릭터 목록":
                         use_container_width=True,
                     )
 
-                # =========================================
-                # 보스희망 편집기
-                # =========================================
                 if (
                     st.session_state[
                         "editing_hope_nickname"
@@ -4427,9 +4646,6 @@ if page == "👥 캐릭터 목록":
                         nickname,
                     )
 
-                # =========================================
-                # 보스배율
-                # =========================================
                 boss_url = clean(
                     row.get(
                         "보스배율캡처URL",
@@ -4640,8 +4856,10 @@ else:
                 )
             )
 
-            m1, m2, m3 = st.columns(
-                3
+            m1, m2, m3 = (
+                st.columns(
+                    3
+                )
             )
 
             with m1:
@@ -4679,9 +4897,7 @@ else:
         )
 
         if success:
-            display_name = (
-                result
-            )
+            display_name = result
 
             st.session_state[
                 "pending_clear_party_editor"
@@ -4822,9 +5038,6 @@ else:
 
             st.rerun()
 
-    # =====================================================
-    # 최종 결과
-    # =====================================================
     if (
         st.session_state
         .show_final_result
