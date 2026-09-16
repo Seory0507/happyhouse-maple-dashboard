@@ -2664,7 +2664,7 @@ def render_hope_editor(
             st.write("")
 
             if st.button(
-                "🗑️",
+                "x",
                 key=(
                     f"delete_hope_"
                     f"{cid}_{index}"
