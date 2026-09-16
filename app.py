@@ -8,8 +8,11 @@ from urllib.parse import quote
 import pandas as pd
 import requests
 import streamlit as st
+import gspread
+
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
+from google.oauth2.service_account import Credentials
 
 
 # =========================================================
@@ -131,6 +134,8 @@ SHEET_URL = get_config("SHEET_URL")
 SHEET_NAME = get_config("SHEET_NAME", "캐릭터목록")
 APP_PASSWORD = get_config("APP_PASSWORD")
 
+BOSS_HOPE_SHEET_NAME = "보스희망"
+
 
 # =========================================================
 # 로컬 이미지
@@ -142,6 +147,7 @@ def local_image_base64(path):
         return ""
 
     try:
+
         with open(path, "rb") as f:
             data = f.read()
 
@@ -165,12 +171,12 @@ def local_image_base64(path):
         )
 
     except Exception:
+
         return ""
 
 
 # =========================================================
 # 캐릭터 로컬 이미지
-# assets/characters/닉네임.png
 # =========================================================
 def get_character_local_image(nickname):
 
@@ -181,14 +187,12 @@ def get_character_local_image(nickname):
     if not nickname:
         return ""
 
-    extensions = [
+    for ext in [
         ".png",
         ".webp",
         ".jpg",
         ".jpeg",
-    ]
-
-    for ext in extensions:
+    ]:
 
         path = os.path.join(
             "assets",
@@ -197,6 +201,7 @@ def get_character_local_image(nickname):
         )
 
         if os.path.exists(path):
+
             return local_image_base64(
                 path
             )
@@ -293,7 +298,7 @@ if not check_password():
 
 
 # =========================================================
-# Google Sheet
+# Google Sheet ID
 # =========================================================
 def get_sheet_id(sheet_url):
 
@@ -301,14 +306,87 @@ def get_sheet_id(sheet_url):
         return None
 
     try:
+
         return (
             sheet_url
             .split("/d/")[1]
             .split("/")[0]
         )
 
-    except IndexError:
+    except Exception:
+
         return None
+
+
+# =========================================================
+# Google 서비스 계정
+# =========================================================
+@st.cache_resource
+def get_gspread_client():
+
+    try:
+
+        service_account_info = dict(
+            st.secrets[
+                "gcp_service_account"
+            ]
+        )
+
+    except Exception as e:
+
+        raise RuntimeError(
+            "Streamlit Secrets의 "
+            "[gcp_service_account] 설정을 확인해주세요."
+        ) from e
+
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+
+
+    credentials = (
+        Credentials
+        .from_service_account_info(
+            service_account_info,
+            scopes=scopes,
+        )
+    )
+
+
+    return gspread.authorize(
+        credentials
+    )
+
+
+@st.cache_resource
+def get_spreadsheet():
+
+    sheet_id = get_sheet_id(
+        SHEET_URL
+    )
+
+    if not sheet_id:
+
+        raise RuntimeError(
+            "SHEET_URL을 확인해주세요."
+        )
+
+    client = get_gspread_client()
+
+    return client.open_by_key(
+        sheet_id
+    )
+
+
+def get_boss_hope_worksheet():
+
+    spreadsheet = get_spreadsheet()
+
+    return spreadsheet.worksheet(
+        BOSS_HOPE_SHEET_NAME
+    )
 
 
 # =========================================================
@@ -319,7 +397,9 @@ def get_drive_file_id(url):
     if not url:
         return None
 
-    url = str(url).strip()
+    url = str(
+        url
+    ).strip()
 
     match = re.search(
         r"/file/d/([^/]+)",
@@ -366,6 +446,7 @@ def load_image_bytes(url):
 
             download_url = url
 
+
         response = requests.get(
             download_url,
             timeout=20,
@@ -389,6 +470,7 @@ def load_image_bytes(url):
         return response.content
 
     except Exception:
+
         return None
 
 
@@ -413,7 +495,7 @@ def load_image_base64(url):
 
 
 # =========================================================
-# 구글 시트
+# 캐릭터 시트 읽기
 # =========================================================
 @st.cache_data(ttl=300)
 def load_character_data():
@@ -441,6 +523,129 @@ def load_character_data():
     return df.dropna(
         how="all"
     )
+
+
+# =========================================================
+# 보스희망 읽기
+# =========================================================
+@st.cache_data(ttl=60)
+def load_boss_hope_data():
+
+    worksheet = (
+        get_boss_hope_worksheet()
+    )
+
+    records = (
+        worksheet
+        .get_all_records()
+    )
+
+    if not records:
+
+        return pd.DataFrame(
+            columns=[
+                "닉네임",
+                "보스",
+                "난이도",
+                "인원",
+            ]
+        )
+
+
+    df = pd.DataFrame(
+        records
+    )
+
+
+    required_columns = [
+        "닉네임",
+        "보스",
+        "난이도",
+        "인원",
+    ]
+
+
+    for col in required_columns:
+
+        if col not in df.columns:
+            df[col] = ""
+
+
+    return df[
+        required_columns
+    ]
+
+
+# =========================================================
+# 보스희망 저장
+# =========================================================
+def save_boss_hopes(
+    nickname,
+    hopes,
+):
+
+    worksheet = (
+        get_boss_hope_worksheet()
+    )
+
+
+    # 현재 닉네임의 기존 행 검색
+    pattern = re.compile(
+        f"^{re.escape(nickname)}$"
+    )
+
+
+    matches = worksheet.findall(
+        pattern,
+        in_column=1,
+    )
+
+
+    # 아래쪽부터 삭제해야 행 번호가 꼬이지 않음
+    rows_to_delete = sorted(
+        [
+            cell.row
+            for cell in matches
+            if cell.row > 1
+        ],
+        reverse=True,
+    )
+
+
+    for row_number in rows_to_delete:
+
+        worksheet.delete_rows(
+            row_number
+        )
+
+
+    # 새 희망 목록 저장
+    if hopes:
+
+        rows = []
+
+        for hope in hopes:
+
+            rows.append(
+                [
+                    nickname,
+                    hope["보스"],
+                    hope["난이도"],
+                    int(
+                        hope["인원"]
+                    ),
+                ]
+            )
+
+
+        worksheet.append_rows(
+            rows,
+            value_input_option="USER_ENTERED",
+        )
+
+
+    # 캐시 즉시 제거
+    load_boss_hope_data.clear()
 
 
 # =========================================================
@@ -484,6 +689,7 @@ def parse_number(value):
         )
 
     except Exception:
+
         return None
 
 
@@ -499,6 +705,7 @@ def format_combat_power(value):
     number = int(
         number
     )
+
 
     if number >= 100_000_000:
 
@@ -613,6 +820,7 @@ def get_stat_url(row):
             if value.startswith(
                 "http"
             ):
+
                 return value
 
     return ""
@@ -630,6 +838,7 @@ def rank_num(rank):
         )
 
     except Exception:
+
         return None
 
 
@@ -644,15 +853,21 @@ def rank_html(rank):
 
     if num == 1:
 
-        path = "assets/rank_gold.png"
+        path = (
+            "assets/rank_gold.png"
+        )
 
     elif num == 2:
 
-        path = "assets/rank_silver.png"
+        path = (
+            "assets/rank_silver.png"
+        )
 
     elif num == 3:
 
-        path = "assets/rank_bronze.png"
+        path = (
+            "assets/rank_bronze.png"
+        )
 
     else:
 
@@ -662,9 +877,11 @@ def rank_html(rank):
             '</div>'
         )
 
+
     image = local_image_base64(
         path
     )
+
 
     if not image:
 
@@ -673,6 +890,7 @@ def rank_html(rank):
             f'{num}위'
             '</div>'
         )
+
 
     return (
         '<div class="rank-image-wrap">'
@@ -774,34 +992,28 @@ st.markdown(
         );
 
     border:
-        1px solid
-        rgba(126,153,192,.28);
+        1px solid rgba(126,153,192,.28);
 
     border-radius: 20px;
 
-    padding:
-        17px 18px 18px 18px;
+    padding: 17px 18px 18px 18px;
 
-    min-height: 275px;
+    min-height: 285px;
 
     box-shadow:
-        0 15px 32px
-        rgba(0,0,0,.23);
+        0 15px 32px rgba(0,0,0,.23);
 }
 
 .rank-card-gold {
-    border-color:
-        rgba(218,174,50,.54);
+    border-color: rgba(218,174,50,.54);
 }
 
 .rank-card-silver {
-    border-color:
-        rgba(172,187,211,.43);
+    border-color: rgba(172,187,211,.43);
 }
 
 .rank-card-bronze {
-    border-color:
-        rgba(193,116,77,.46);
+    border-color: rgba(193,116,77,.46);
 }
 
 
@@ -830,19 +1042,16 @@ st.markdown(
 
 .rank-normal-text {
     color: #c1cede;
-
     font-size: .91rem;
     font-weight: 800;
-
     padding-top: 5px;
 }
 
 
-/* CARD BODY */
+/* BODY */
 
 .card-main {
     display: grid;
-
     grid-template-columns:
         128px minmax(0,1fr);
 
@@ -852,7 +1061,7 @@ st.markdown(
 }
 
 
-/* CHARACTER IMAGE */
+/* CHARACTER */
 
 .character-image-box {
     position: relative;
@@ -860,7 +1069,6 @@ st.markdown(
     height: 150px;
 
     display: flex;
-
     align-items: center;
     justify-content: center;
 }
@@ -896,8 +1104,7 @@ st.markdown(
 
     filter:
         drop-shadow(
-            0 8px 10px
-            rgba(0,0,0,.46)
+            0 8px 10px rgba(0,0,0,.46)
         );
 }
 
@@ -906,19 +1113,14 @@ st.markdown(
 
 .nickname {
     font-size: 1.45rem;
-
     color: #f9faff;
-
     font-weight: 900;
-
     letter-spacing: -.8px;
 }
 
 .realname {
     color: #94a6bf;
-
     font-size: .86rem;
-
     margin-bottom: 10px;
 }
 
@@ -927,10 +1129,8 @@ st.markdown(
 
 .job-row {
     display: flex;
-
     align-items: flex-start;
     justify-content: space-between;
-
     margin-bottom: 13px;
 }
 
@@ -939,8 +1139,7 @@ st.markdown(
         rgba(59,94,137,.25);
 
     border:
-        1px solid
-        rgba(102,147,203,.30);
+        1px solid rgba(102,147,203,.30);
 
     border-radius: 8px;
 
@@ -955,11 +1154,8 @@ st.markdown(
 
 .right-meta {
     display: flex;
-
     flex-direction: column;
-
     align-items: flex-end;
-
     gap: 5px;
 }
 
@@ -976,8 +1172,7 @@ st.markdown(
         rgba(29,87,150,.35);
 
     border:
-        1px solid
-        rgba(76,157,238,.38);
+        1px solid rgba(76,157,238,.38);
 
     color:
         #cce9ff !important;
@@ -1009,8 +1204,7 @@ st.markdown(
         rgba(75,106,148,.17);
 
     border:
-        1px solid
-        rgba(115,151,199,.24);
+        1px solid rgba(115,151,199,.24);
 
     color: #b7cce6;
 
@@ -1041,8 +1235,7 @@ st.markdown(
 
 .stat-box:first-child {
     border-right:
-        1px solid
-        rgba(126,149,182,.17);
+        1px solid rgba(126,149,182,.17);
 }
 
 .stat-label {
@@ -1059,14 +1252,56 @@ st.markdown(
     font-weight: 850;
 }
 
-.target-boss {
-    margin-top: 14px;
 
-    color: #dfe7f4;
+/* BOSS HOPES */
 
-    font-size: .88rem;
+.boss-hope-area {
+    margin-top: 13px;
 
-    font-weight: 650;
+    padding-top: 10px;
+
+    border-top:
+        1px solid rgba(115,139,172,.15);
+}
+
+.boss-hope-title {
+    color: #9bb0ca;
+
+    font-size: .75rem;
+
+    font-weight: 800;
+
+    margin-bottom: 5px;
+}
+
+.boss-hope-item {
+    color: #e4ecf8;
+
+    font-size: .84rem;
+
+    font-weight: 700;
+
+    line-height: 1.52;
+}
+
+.boss-hope-empty {
+    color: #71849e;
+
+    font-size: .82rem;
+}
+
+
+/* EDITOR */
+
+.hope-editor-title {
+    color: #edf3ff;
+
+    font-size: 1.02rem;
+
+    font-weight: 850;
+
+    margin-top: 10px;
+    margin-bottom: 5px;
 }
 
 
@@ -1076,8 +1311,7 @@ div[data-testid="stExpander"] {
     border-radius: 10px;
 
     border:
-        1px solid
-        rgba(144,107,234,.53);
+        1px solid rgba(144,107,234,.53);
 
     background:
         rgba(69,47,115,.19);
@@ -1098,7 +1332,6 @@ div[data-testid="stExpander"] {
     font-weight: 900;
 
     margin-top: 15px;
-
     margin-bottom: 3px;
 }
 
@@ -1118,7 +1351,6 @@ div[data-testid="stExpander"] {
     font-weight: 850;
 
     margin-top: 18px;
-
     margin-bottom: 6px;
 }
 
@@ -1134,8 +1366,7 @@ div[data-testid="stExpander"] {
         );
 
     border:
-        1px solid
-        rgba(90,145,205,.30);
+        1px solid rgba(90,145,205,.30);
 
     border-radius: 16px;
 
@@ -1172,8 +1403,7 @@ div[data-testid="stExpander"] {
         );
 
     border:
-        1px solid
-        rgba(112,151,204,.34);
+        1px solid rgba(112,151,204,.34);
 
     border-radius: 18px;
 
@@ -1198,8 +1428,7 @@ div[data-testid="stExpander"] {
     padding: 8px 0;
 
     border-bottom:
-        1px solid
-        rgba(105,129,162,.13);
+        1px solid rgba(105,129,162,.13);
 }
 
 .final-party-stat {
@@ -1246,6 +1475,7 @@ main_logo = local_image_base64(
 maple_logo = local_image_base64(
     "assets/logo_maplestory.png"
 )
+
 
 main_logo_html = ""
 
@@ -1294,7 +1524,7 @@ st.markdown(
 
 
 # =========================================================
-# DATA
+# 데이터 로딩
 # =========================================================
 try:
 
@@ -1303,7 +1533,26 @@ try:
 except Exception as e:
 
     st.error(
-        "구글 시트 데이터를 불러오지 못했습니다."
+        "구글 시트의 캐릭터 데이터를 불러오지 못했습니다."
+    )
+
+    st.code(
+        str(e)
+    )
+
+    st.stop()
+
+
+try:
+
+    boss_hope_df = (
+        load_boss_hope_data()
+    )
+
+except Exception as e:
+
+    st.error(
+        "보스희망 시트를 불러오지 못했습니다."
     )
 
     st.code(
@@ -1323,7 +1572,7 @@ if df.empty:
 
 
 # =========================================================
-# SORT / ID
+# 정렬 / ID
 # =========================================================
 if "순위" in df.columns:
 
@@ -1349,7 +1598,7 @@ df["_캐릭터ID"] = (
 
 
 # =========================================================
-# CHARACTER LOOKUP
+# 캐릭터 lookup
 # =========================================================
 character_lookup = {}
 
@@ -1429,6 +1678,136 @@ all_character_ids = list(
 
 
 # =========================================================
+# 보스희망 lookup
+# =========================================================
+boss_hope_lookup = {}
+
+
+for _, hope_row in boss_hope_df.iterrows():
+
+    nickname = clean(
+        hope_row.get(
+            "닉네임",
+            "",
+        )
+    )
+
+    boss = clean(
+        hope_row.get(
+            "보스",
+            "",
+        )
+    )
+
+    difficulty = clean(
+        hope_row.get(
+            "난이도",
+            "",
+        )
+    )
+
+    people = parse_number(
+        hope_row.get(
+            "인원",
+            "",
+        )
+    )
+
+
+    if not nickname:
+        continue
+
+
+    if nickname not in boss_hope_lookup:
+
+        boss_hope_lookup[
+            nickname
+        ] = []
+
+
+    boss_hope_lookup[
+        nickname
+    ].append(
+        {
+            "보스": boss,
+            "난이도": difficulty,
+            "인원": (
+                int(people)
+                if people is not None
+                else 1
+            ),
+        }
+    )
+
+
+# =========================================================
+# 보스희망 카드 HTML
+# =========================================================
+def boss_hope_html(nickname):
+
+    hopes = boss_hope_lookup.get(
+        nickname,
+        [],
+    )
+
+
+    if not hopes:
+
+        return """
+<div class="boss-hope-area">
+
+<div class="boss-hope-title">
+🎯 가고 싶은 보스
+</div>
+
+<div class="boss-hope-empty">
+등록된 보스가 없습니다.
+</div>
+
+</div>
+"""
+
+
+    lines = []
+
+
+    for hope in hopes:
+
+        boss = html.escape(
+            str(
+                hope["보스"]
+            )
+        )
+
+        difficulty = html.escape(
+            str(
+                hope["난이도"]
+            )
+        )
+
+        people = int(
+            hope["인원"]
+        )
+
+
+        lines.append(
+            '<div class="boss-hope-item">'
+            f'{difficulty} {boss} · {people}인'
+            '</div>'
+        )
+
+
+    return (
+        '<div class="boss-hope-area">'
+        '<div class="boss-hope-title">'
+        '🎯 가고 싶은 보스'
+        '</div>'
+        + "".join(lines)
+        + '</div>'
+    )
+
+
+# =========================================================
 # CHARACTER CARD
 # =========================================================
 def build_card(row):
@@ -1479,33 +1858,29 @@ def build_card(row):
         )
     )
 
-    combat_text = format_combat_power(
-        row.get(
-            "전투력",
-            "",
+    combat_text = (
+        format_combat_power(
+            row.get(
+                "전투력",
+                "",
+            )
         )
     )
 
-    hexa_text = format_hexa(
-        row.get(
-            "헥사환산",
-            "",
+    hexa_text = (
+        format_hexa(
+            row.get(
+                "헥사환산",
+                "",
+            )
         )
     )
 
-    target = esc(
-        row.get(
-            "목표보스",
-            "",
+
+    image = (
+        get_character_local_image(
+            nickname_raw
         )
-    )
-
-    if not target:
-        target = "미정"
-
-
-    image = get_character_local_image(
-        nickname_raw
     )
 
 
@@ -1518,8 +1893,10 @@ def build_card(row):
             )
         )
 
-        image = load_image_base64(
-            image_url
+        image = (
+            load_image_base64(
+                image_url
+            )
         )
 
 
@@ -1572,6 +1949,11 @@ def build_card(row):
         )
 
 
+    hope_html = boss_hope_html(
+        nickname_raw
+    )
+
+
     return f"""
 <div class="character-card {rank_card_class(rank)}">
 
@@ -1595,11 +1977,13 @@ def build_card(row):
 {name}
 </div>
 
+
 <div class="job-row">
 
 <span class="job-chip">
 {job}
 </span>
+
 
 <div class="right-meta">
 
@@ -1646,12 +2030,7 @@ Lv. {level}
 </div>
 
 
-<div class="target-boss">
-
-🎯 목표 보스:
-<b>{target}</b>
-
-</div>
+{hope_html}
 
 </div>
 
@@ -1662,7 +2041,818 @@ Lv. {level}
 
 
 # =========================================================
-# PARTY FUNCTIONS
+# 보스희망 편집기 상태
+# =========================================================
+if "editing_hope_nickname" not in st.session_state:
+
+    st.session_state[
+        "editing_hope_nickname"
+    ] = None
+
+
+if "boss_hope_saved_message" not in st.session_state:
+
+    st.session_state[
+        "boss_hope_saved_message"
+    ] = ""
+
+
+# =========================================================
+# 보스희망 편집기 키
+# =========================================================
+def hope_boss_key(
+    cid,
+    index,
+):
+
+    return (
+        f"hope_boss_"
+        f"{cid}_{index}"
+    )
+
+
+def hope_diff_key(
+    cid,
+    index,
+):
+
+    return (
+        f"hope_diff_"
+        f"{cid}_{index}"
+    )
+
+
+def hope_people_key(
+    cid,
+    index,
+):
+
+    return (
+        f"hope_people_"
+        f"{cid}_{index}"
+    )
+
+
+def hope_count_key(cid):
+
+    return (
+        f"hope_row_count_"
+        f"{cid}"
+    )
+
+
+# =========================================================
+# 편집기 기존 키 제거
+# =========================================================
+def clear_hope_editor_keys(cid):
+
+    prefix_list = [
+        f"hope_boss_{cid}_",
+        f"hope_diff_{cid}_",
+        f"hope_people_{cid}_",
+    ]
+
+
+    keys = list(
+        st.session_state.keys()
+    )
+
+
+    for key in keys:
+
+        if any(
+            str(key).startswith(
+                prefix
+            )
+            for prefix
+            in prefix_list
+        ):
+
+            del st.session_state[
+                key
+            ]
+
+
+    count_key = hope_count_key(
+        cid
+    )
+
+    if count_key in st.session_state:
+
+        del st.session_state[
+            count_key
+        ]
+
+
+# =========================================================
+# 편집기 초기화
+# =========================================================
+def initialize_hope_editor(
+    cid,
+    nickname,
+):
+
+    clear_hope_editor_keys(
+        cid
+    )
+
+
+    existing = (
+        boss_hope_lookup.get(
+            nickname,
+            [],
+        )
+    )
+
+
+    if not existing:
+
+        existing = [
+            {
+                "보스":
+                    list(
+                        BOSS_DIFFICULTIES.keys()
+                    )[0],
+
+                "난이도":
+                    BOSS_DIFFICULTIES[
+                        list(
+                            BOSS_DIFFICULTIES.keys()
+                        )[0]
+                    ][0],
+
+                "인원":
+                    2,
+            }
+        ]
+
+
+    st.session_state[
+        hope_count_key(cid)
+    ] = len(
+        existing
+    )
+
+
+    for index, hope in enumerate(
+        existing
+    ):
+
+        boss = clean(
+            hope.get(
+                "보스",
+                "",
+            )
+        )
+
+
+        if boss not in BOSS_DIFFICULTIES:
+
+            boss = list(
+                BOSS_DIFFICULTIES.keys()
+            )[0]
+
+
+        difficulty = clean(
+            hope.get(
+                "난이도",
+                "",
+            )
+        )
+
+
+        if (
+            difficulty
+            not in
+            BOSS_DIFFICULTIES[boss]
+        ):
+
+            difficulty = (
+                BOSS_DIFFICULTIES[
+                    boss
+                ][0]
+            )
+
+
+        people = int(
+            hope.get(
+                "인원",
+                2,
+            )
+        )
+
+
+        if people < 1:
+            people = 1
+
+        if people > 6:
+            people = 6
+
+
+        st.session_state[
+            hope_boss_key(
+                cid,
+                index,
+            )
+        ] = boss
+
+
+        st.session_state[
+            hope_diff_key(
+                cid,
+                index,
+            )
+        ] = difficulty
+
+
+        st.session_state[
+            hope_people_key(
+                cid,
+                index,
+            )
+        ] = people
+
+
+    st.session_state[
+        "editing_hope_nickname"
+    ] = nickname
+
+
+# =========================================================
+# 삭제 예약 처리
+# 위젯 생성 전에 실행됨
+# =========================================================
+if (
+    "pending_hope_rebuild"
+    in st.session_state
+):
+
+    rebuild = (
+        st.session_state[
+            "pending_hope_rebuild"
+        ]
+    )
+
+
+    cid = rebuild[
+        "cid"
+    ]
+
+    nickname = rebuild[
+        "nickname"
+    ]
+
+    rows = rebuild[
+        "rows"
+    ]
+
+
+    clear_hope_editor_keys(
+        cid
+    )
+
+
+    if not rows:
+
+        rows = [
+            {
+                "보스":
+                    list(
+                        BOSS_DIFFICULTIES.keys()
+                    )[0],
+
+                "난이도":
+                    BOSS_DIFFICULTIES[
+                        list(
+                            BOSS_DIFFICULTIES.keys()
+                        )[0]
+                    ][0],
+
+                "인원":
+                    2,
+            }
+        ]
+
+
+    st.session_state[
+        hope_count_key(cid)
+    ] = len(
+        rows
+    )
+
+
+    for index, row_data in enumerate(
+        rows
+    ):
+
+        st.session_state[
+            hope_boss_key(
+                cid,
+                index,
+            )
+        ] = row_data[
+            "보스"
+        ]
+
+        st.session_state[
+            hope_diff_key(
+                cid,
+                index,
+            )
+        ] = row_data[
+            "난이도"
+        ]
+
+        st.session_state[
+            hope_people_key(
+                cid,
+                index,
+            )
+        ] = int(
+            row_data[
+                "인원"
+            ]
+        )
+
+
+    st.session_state[
+        "editing_hope_nickname"
+    ] = nickname
+
+
+    del st.session_state[
+        "pending_hope_rebuild"
+    ]
+
+
+# =========================================================
+# 현재 편집값 수집
+# =========================================================
+def collect_hope_editor_rows(
+    cid,
+):
+
+    count = int(
+        st.session_state.get(
+            hope_count_key(cid),
+            1,
+        )
+    )
+
+
+    rows = []
+
+
+    for index in range(
+        count
+    ):
+
+        boss = (
+            st.session_state.get(
+                hope_boss_key(
+                    cid,
+                    index,
+                ),
+                list(
+                    BOSS_DIFFICULTIES.keys()
+                )[0],
+            )
+        )
+
+
+        difficulty = (
+            st.session_state.get(
+                hope_diff_key(
+                    cid,
+                    index,
+                ),
+                BOSS_DIFFICULTIES[
+                    boss
+                ][0],
+            )
+        )
+
+
+        people = int(
+            st.session_state.get(
+                hope_people_key(
+                    cid,
+                    index,
+                ),
+                2,
+            )
+        )
+
+
+        rows.append(
+            {
+                "보스":
+                    boss,
+
+                "난이도":
+                    difficulty,
+
+                "인원":
+                    people,
+            }
+        )
+
+
+    return rows
+
+
+# =========================================================
+# 보스희망 편집기
+# =========================================================
+def render_hope_editor(
+    cid,
+    nickname,
+):
+
+    st.markdown(
+        """
+<div class="hope-editor-title">
+🎯 가고 싶은 보스 수정
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+    count_key = hope_count_key(
+        cid
+    )
+
+
+    if count_key not in st.session_state:
+
+        initialize_hope_editor(
+            cid,
+            nickname,
+        )
+
+
+    row_count = int(
+        st.session_state[
+            count_key
+        ]
+    )
+
+
+    for index in range(
+        row_count
+    ):
+
+        boss_key = hope_boss_key(
+            cid,
+            index,
+        )
+
+        diff_key = hope_diff_key(
+            cid,
+            index,
+        )
+
+        people_key = hope_people_key(
+            cid,
+            index,
+        )
+
+
+        if boss_key not in st.session_state:
+
+            first_boss = list(
+                BOSS_DIFFICULTIES.keys()
+            )[0]
+
+            st.session_state[
+                boss_key
+            ] = first_boss
+
+
+        selected_boss = (
+            st.session_state[
+                boss_key
+            ]
+        )
+
+
+        difficulty_options = (
+            BOSS_DIFFICULTIES[
+                selected_boss
+            ]
+        )
+
+
+        if (
+            diff_key
+            not in st.session_state
+        ):
+
+            st.session_state[
+                diff_key
+            ] = difficulty_options[
+                0
+            ]
+
+
+        elif (
+            st.session_state[
+                diff_key
+            ]
+            not in difficulty_options
+        ):
+
+            st.session_state[
+                diff_key
+            ] = difficulty_options[
+                0
+            ]
+
+
+        if (
+            people_key
+            not in st.session_state
+        ):
+
+            st.session_state[
+                people_key
+            ] = 2
+
+
+        c1, c2, c3, c4 = (
+            st.columns(
+                [
+                    2.2,
+                    1.3,
+                    .8,
+                    .45,
+                ]
+            )
+        )
+
+
+        with c1:
+
+            st.selectbox(
+                "보스",
+                options=list(
+                    BOSS_DIFFICULTIES.keys()
+                ),
+                key=boss_key,
+            )
+
+
+        # 보스 선택 변경 후 난이도 목록 재계산
+        selected_boss = (
+            st.session_state[
+                boss_key
+            ]
+        )
+
+
+        difficulty_options = (
+            BOSS_DIFFICULTIES[
+                selected_boss
+            ]
+        )
+
+
+        if (
+            st.session_state[
+                diff_key
+            ]
+            not in difficulty_options
+        ):
+
+            st.session_state[
+                diff_key
+            ] = difficulty_options[
+                0
+            ]
+
+
+        with c2:
+
+            st.selectbox(
+                "난이도",
+                options=difficulty_options,
+                key=diff_key,
+            )
+
+
+        with c3:
+
+            st.selectbox(
+                "인원",
+                options=list(
+                    range(
+                        1,
+                        7,
+                    )
+                ),
+                format_func=lambda x:
+                    f"{x}인",
+                key=people_key,
+            )
+
+
+        with c4:
+
+            st.write("")
+
+            st.write("")
+
+            if st.button(
+                "🗑️",
+                key=(
+                    f"delete_hope_"
+                    f"{cid}_{index}"
+                ),
+                help="이 보스 삭제",
+            ):
+
+                current_rows = (
+                    collect_hope_editor_rows(
+                        cid
+                    )
+                )
+
+
+                remaining_rows = [
+
+                    row_data
+
+                    for row_index, row_data
+                    in enumerate(
+                        current_rows
+                    )
+
+                    if row_index
+                    != index
+                ]
+
+
+                st.session_state[
+                    "pending_hope_rebuild"
+                ] = {
+                    "cid":
+                        cid,
+
+                    "nickname":
+                        nickname,
+
+                    "rows":
+                        remaining_rows,
+                }
+
+
+                st.rerun()
+
+
+    add_col, save_col, cancel_col = (
+        st.columns(
+            [
+                1,
+                1,
+                1,
+            ]
+        )
+    )
+
+
+    with add_col:
+
+        if st.button(
+            "➕ 보스 추가",
+            key=(
+                f"add_hope_"
+                f"{cid}"
+            ),
+            use_container_width=True,
+        ):
+
+            new_index = (
+                row_count
+            )
+
+            first_boss = list(
+                BOSS_DIFFICULTIES.keys()
+            )[0]
+
+
+            st.session_state[
+                count_key
+            ] = (
+                row_count + 1
+            )
+
+
+            st.session_state[
+                hope_boss_key(
+                    cid,
+                    new_index,
+                )
+            ] = first_boss
+
+
+            st.session_state[
+                hope_diff_key(
+                    cid,
+                    new_index,
+                )
+            ] = (
+                BOSS_DIFFICULTIES[
+                    first_boss
+                ][0]
+            )
+
+
+            st.session_state[
+                hope_people_key(
+                    cid,
+                    new_index,
+                )
+            ] = 2
+
+
+            st.rerun()
+
+
+    with save_col:
+
+        if st.button(
+            "💾 저장",
+            key=(
+                f"save_hope_"
+                f"{cid}"
+            ),
+            type="primary",
+            use_container_width=True,
+        ):
+
+            rows = (
+                collect_hope_editor_rows(
+                    cid
+                )
+            )
+
+
+            try:
+
+                save_boss_hopes(
+                    nickname,
+                    rows,
+                )
+
+
+                st.session_state[
+                    "editing_hope_nickname"
+                ] = None
+
+
+                st.session_state[
+                    "boss_hope_saved_message"
+                ] = (
+                    f"{nickname}의 "
+                    "보스희망을 저장했습니다."
+                )
+
+
+                st.rerun()
+
+
+            except Exception as e:
+
+                st.error(
+                    "보스희망 저장에 실패했습니다."
+                )
+
+                st.code(
+                    str(e)
+                )
+
+
+    with cancel_col:
+
+        if st.button(
+            "취소",
+            key=(
+                f"cancel_hope_"
+                f"{cid}"
+            ),
+            use_container_width=True,
+        ):
+
+            st.session_state[
+                "editing_hope_nickname"
+            ] = None
+
+            st.rerun()
+
+
+# =========================================================
+# 파티 관련 함수
 # =========================================================
 def character_option_text(cid):
 
@@ -1683,6 +2873,7 @@ def calculate_party_stats(
 ):
 
     if not member_ids:
+
         return 0, 0
 
 
@@ -1692,7 +2883,8 @@ def calculate_party_stats(
             cid
         ]["combat"]
 
-        for cid in member_ids
+        for cid
+        in member_ids
     )
 
 
@@ -1702,7 +2894,8 @@ def calculate_party_stats(
             cid
         ]["hexa"]
 
-        for cid in member_ids
+        for cid
+        in member_ids
 
         if character_lookup[
             cid
@@ -1734,7 +2927,7 @@ def calculate_party_stats(
 
 
 # =========================================================
-# SESSION STATE
+# 파티 SESSION STATE
 # =========================================================
 if "completed_bosses" not in st.session_state:
 
@@ -1747,7 +2940,7 @@ if "show_final_result" not in st.session_state:
 
 
 # =========================================================
-# PARTY WIDGET RESET
+# 파티 위젯 초기화
 # =========================================================
 def clear_party_widget_keys():
 
@@ -1794,7 +2987,7 @@ if st.session_state.get(
 
 
 # =========================================================
-# 예약 불러오기
+# 보스 편성 예약 불러오기
 # =========================================================
 if "pending_load_boss" in st.session_state:
 
@@ -1860,7 +3053,7 @@ if "pending_load_boss" in st.session_state:
 
 
 # =========================================================
-# 기본 파티 값
+# 파티 기본값
 # =========================================================
 if "party_boss_name" not in st.session_state:
 
@@ -1879,7 +3072,7 @@ if "party_count" not in st.session_state:
 
 
 # =========================================================
-# 보스 편성 저장
+# 현재 보스 편성 저장
 # =========================================================
 def save_current_boss():
 
@@ -2073,11 +3266,11 @@ def build_final_text():
 
 
 # =========================================================
-# 한글 폰트 찾기
-# assets/fonts 우선
-# Variable 폰트도 대응
+# 한글 폰트
 # =========================================================
-def find_korean_font(bold=False):
+def find_korean_font(
+    bold=False
+):
 
     font_dir = os.path.join(
         "assets",
@@ -2108,7 +3301,6 @@ def find_korean_font(bold=False):
         ]
 
 
-    # 먼저 정확한 파일명 검색
     for path in candidates:
 
         if os.path.exists(
@@ -2118,7 +3310,6 @@ def find_korean_font(bold=False):
             return path
 
 
-    # assets/fonts 안에서 자동 검색
     if os.path.isdir(
         font_dir
     ):
@@ -2132,7 +3323,9 @@ def find_korean_font(bold=False):
                 font_dir
             )
 
-            if filename.lower().endswith(
+            if filename
+            .lower()
+            .endswith(
                 (
                     ".ttf",
                     ".otf",
@@ -2142,29 +3335,17 @@ def find_korean_font(bold=False):
         ]
 
 
-        # Bold 요청이면 Bold 파일 먼저
         if bold:
 
             for filename in font_files:
 
-                lower_name = filename.lower()
+                lower_name = (
+                    filename.lower()
+                )
 
                 if (
-                    (
-                        "noto"
-                        in lower_name
-                    )
-                    and
-                    (
-                        "korean"
-                        in lower_name
-                        or
-                        "sanskr"
-                        in lower_name
-                        or
-                        "kr"
-                        in lower_name
-                    )
+                    "noto"
+                    in lower_name
                     and
                     "bold"
                     in lower_name
@@ -2176,22 +3357,14 @@ def find_korean_font(bold=False):
                     )
 
 
-        # Regular 또는 Variable 검색
         for filename in font_files:
 
-            lower_name = filename.lower()
+            lower_name = (
+                filename.lower()
+            )
 
             if (
                 "noto"
-                in lower_name
-            ) and (
-                "korean"
-                in lower_name
-                or
-                "sanskr"
-                in lower_name
-                or
-                "kr"
                 in lower_name
             ):
 
@@ -2201,8 +3374,6 @@ def find_korean_font(bold=False):
                 )
 
 
-        # Noto가 아니어도 fonts 폴더에
-        # 폰트가 하나뿐이면 그것을 사용
         if len(
             font_files
         ) == 1:
@@ -2216,61 +3387,61 @@ def find_korean_font(bold=False):
     return None
 
 
-# =========================================================
-# 폰트 로딩
-# =========================================================
 def load_party_fonts():
 
-    regular_path = find_korean_font(
-        bold=False
+    regular_path = (
+        find_korean_font(
+            bold=False
+        )
     )
 
-    bold_path = find_korean_font(
-        bold=True
+    bold_path = (
+        find_korean_font(
+            bold=True
+        )
     )
 
 
     if not bold_path:
-        bold_path = regular_path
+
+        bold_path = (
+            regular_path
+        )
 
 
     if regular_path:
 
         try:
 
-            title_font = ImageFont.truetype(
-                bold_path or regular_path,
-                46,
-            )
-
-            boss_font = ImageFont.truetype(
-                bold_path or regular_path,
-                28,
-            )
-
-            member_font = ImageFont.truetype(
-                regular_path,
-                22,
-            )
-
-            stat_font = ImageFont.truetype(
-                regular_path,
-                17,
-            )
-
-
             return (
-                title_font,
-                boss_font,
-                member_font,
-                stat_font,
+                ImageFont.truetype(
+                    bold_path
+                    or regular_path,
+                    46,
+                ),
+
+                ImageFont.truetype(
+                    bold_path
+                    or regular_path,
+                    28,
+                ),
+
+                ImageFont.truetype(
+                    regular_path,
+                    22,
+                ),
+
+                ImageFont.truetype(
+                    regular_path,
+                    17,
+                ),
             )
 
         except Exception:
+
             pass
 
 
-    # 최후 fallback
     return (
         ImageFont.load_default(),
         ImageFont.load_default(),
@@ -2281,7 +3452,7 @@ def load_party_fonts():
 
 # =========================================================
 # 최종 PNG
-# 2열 배치
+# 2열 보스 카드
 # =========================================================
 def make_party_image():
 
@@ -2290,7 +3461,9 @@ def make_party_image():
         .completed_bosses
     )
 
+
     if not completed:
+
         return None
 
 
@@ -2301,6 +3474,7 @@ def make_party_image():
     top_header_height = 140
 
     card_gap = 28
+
 
     card_width = (
         canvas_width
@@ -2318,9 +3492,6 @@ def make_party_image():
     party_gap = 10
 
 
-    # =====================================================
-    # 폰트
-    # =====================================================
     (
         title_font,
         boss_font,
@@ -2329,9 +3500,6 @@ def make_party_image():
     ) = load_party_fonts()
 
 
-    # =====================================================
-    # 임시 Draw
-    # =====================================================
     temp_image = Image.new(
         "RGB",
         (
@@ -2351,9 +3519,6 @@ def make_party_image():
     )
 
 
-    # =====================================================
-    # 닉네임 줄바꿈
-    # =====================================================
     def wrap_names(
         text,
         font,
@@ -2366,12 +3531,15 @@ def make_party_image():
 
 
         if not names:
+
             return [""]
 
 
         lines = []
 
-        current = names[0]
+        current = names[
+            0
+        ]
 
 
         for name in names[
@@ -2385,13 +3553,15 @@ def make_party_image():
             )
 
 
-            bbox = temp_draw.textbbox(
-                (
-                    0,
-                    0,
-                ),
-                candidate,
-                font=font,
+            bbox = (
+                temp_draw.textbbox(
+                    (
+                        0,
+                        0,
+                    ),
+                    candidate,
+                    font=font,
+                )
             )
 
 
@@ -2403,7 +3573,9 @@ def make_party_image():
 
             if width <= max_width:
 
-                current = candidate
+                current = (
+                    candidate
+                )
 
             else:
 
@@ -2411,7 +3583,9 @@ def make_party_image():
                     current
                 )
 
-                current = name
+                current = (
+                    name
+                )
 
 
         lines.append(
@@ -2422,11 +3596,7 @@ def make_party_image():
         return lines
 
 
-    # =====================================================
-    # 보스 카드 데이터
-    # =====================================================
     boss_cards = []
-
 
     usable_text_width = (
         card_width
@@ -2446,6 +3616,7 @@ def make_party_image():
         ]:
 
             if not members:
+
                 continue
 
 
@@ -2467,15 +3638,12 @@ def make_party_image():
             )
 
 
-            wrapped_lines = wrap_names(
-                member_text,
-                member_font,
-                usable_text_width,
-            )
-
-
             wrapped_lines = (
-                wrapped_lines[
+                wrap_names(
+                    member_text,
+                    member_font,
+                    usable_text_width,
+                )[
                     :2
                 ]
             )
@@ -2497,15 +3665,13 @@ def make_party_image():
             )
 
 
-            if len(
-                wrapped_lines
-            ) == 1:
-
-                row_height = 72
-
-            else:
-
-                row_height = 96
+            row_height = (
+                72
+                if len(
+                    wrapped_lines
+                ) == 1
+                else 96
+            )
 
 
             party_rows.append(
@@ -2523,6 +3689,7 @@ def make_party_image():
 
 
         if not party_rows:
+
             continue
 
 
@@ -2569,12 +3736,10 @@ def make_party_image():
 
 
     if not boss_cards:
+
         return None
 
 
-    # =====================================================
-    # 2열 행 높이
-    # =====================================================
     row_heights = []
 
 
@@ -2619,9 +3784,6 @@ def make_party_image():
         )
 
 
-    # =====================================================
-    # 캔버스 높이
-    # =====================================================
     canvas_height = (
 
         top_header_height
@@ -2644,9 +3806,6 @@ def make_party_image():
     )
 
 
-    # =====================================================
-    # 캔버스
-    # =====================================================
     image = Image.new(
         "RGB",
         (
@@ -2666,9 +3825,6 @@ def make_party_image():
     )
 
 
-    # =====================================================
-    # HEADER
-    # =====================================================
     draw.rectangle(
         [
             0,
@@ -2699,9 +3855,6 @@ def make_party_image():
     )
 
 
-    # =====================================================
-    # 보스 카드 그리기
-    # =====================================================
     def draw_boss_card(
         x,
         y,
@@ -2715,7 +3868,6 @@ def make_party_image():
         )
 
 
-        # 외곽
         draw.rounded_rectangle(
             [
                 x,
@@ -2738,13 +3890,13 @@ def make_party_image():
         )
 
 
-        # 보스 제목
         draw.rounded_rectangle(
             [
                 x + 16,
                 y + 16,
                 x + card_width - 16,
-                y + 16 + boss_header_h,
+                y + 16
+                + boss_header_h,
             ],
             radius=14,
             fill=(
@@ -2786,7 +3938,6 @@ def make_party_image():
         )
 
 
-        # 각 파티
         for row_data in card_data[
             "rows"
         ]:
@@ -2803,7 +3954,8 @@ def make_party_image():
                     x + 20,
                     current_y,
                     x + card_width - 20,
-                    current_y + row_height,
+                    current_y
+                    + row_height,
                 ],
                 radius=12,
                 fill=(
@@ -2830,7 +3982,6 @@ def make_party_image():
             )
 
 
-            # 닉네임
             for line in row_data[
                 "lines"
             ]:
@@ -2852,7 +4003,6 @@ def make_party_image():
                 text_y += 28
 
 
-            # 스탯
             stat_y = (
                 current_y
                 + row_height
@@ -2883,9 +4033,6 @@ def make_party_image():
             )
 
 
-    # =====================================================
-    # 2열 배치
-    # =====================================================
     current_y = (
         top_header_height
         + outer_padding
@@ -2897,7 +4044,6 @@ def make_party_image():
 
     for row_height in row_heights:
 
-        # 왼쪽
         left_x = (
             outer_padding
         )
@@ -2915,7 +4061,6 @@ def make_party_image():
         card_index += 1
 
 
-        # 오른쪽
         if (
             card_index
             < len(
@@ -2948,9 +4093,6 @@ def make_party_image():
         )
 
 
-    # =====================================================
-    # PNG
-    # =====================================================
     buffer = BytesIO()
 
 
@@ -2967,6 +4109,24 @@ def make_party_image():
 
 
     return buffer.getvalue()
+
+
+# =========================================================
+# 저장 완료 메시지
+# =========================================================
+if st.session_state.get(
+    "boss_hope_saved_message"
+):
+
+    st.success(
+        st.session_state[
+            "boss_hope_saved_message"
+        ]
+    )
+
+    st.session_state[
+        "boss_hope_saved_message"
+    ] = ""
 
 
 # =========================================================
@@ -3117,6 +4277,20 @@ if page == "👥 캐릭터 목록":
 
             with col:
 
+                cid = int(
+                    row[
+                        "_캐릭터ID"
+                    ]
+                )
+
+                nickname = clean(
+                    row.get(
+                        "닉네임",
+                        "",
+                    )
+                )
+
+
                 st.markdown(
                     build_card(
                         row
@@ -3125,6 +4299,60 @@ if page == "👥 캐릭터 목록":
                 )
 
 
+                # =========================================
+                # 보스희망 수정 버튼
+                # =========================================
+                if st.button(
+                    "✏️ 보스희망 수정",
+                    key=(
+                        f"edit_hope_"
+                        f"{cid}"
+                    ),
+                    use_container_width=True,
+                ):
+
+                    if (
+                        st.session_state[
+                            "editing_hope_nickname"
+                        ]
+                        == nickname
+                    ):
+
+                        st.session_state[
+                            "editing_hope_nickname"
+                        ] = None
+
+                        st.rerun()
+
+                    else:
+
+                        initialize_hope_editor(
+                            cid,
+                            nickname,
+                        )
+
+                        st.rerun()
+
+
+                # =========================================
+                # 편집 영역
+                # =========================================
+                if (
+                    st.session_state[
+                        "editing_hope_nickname"
+                    ]
+                    == nickname
+                ):
+
+                    render_hope_editor(
+                        cid,
+                        nickname,
+                    )
+
+
+                # =========================================
+                # 보스배율
+                # =========================================
                 boss_url = clean(
                     row.get(
                         "보스배율캡처URL",
@@ -3203,9 +4431,6 @@ else:
     )
 
 
-    # =====================================================
-    # 보스 / 난이도 / 파티 수
-    # =====================================================
     boss_col, difficulty_col, count_col = (
         st.columns(
             [
@@ -3235,7 +4460,6 @@ else:
     )
 
 
-    # 새 보스에 없는 난이도 값이면 초기화
     if (
         "party_boss_difficulty"
         in st.session_state
@@ -3282,9 +4506,6 @@ else:
     selected_in_previous_parties = set()
 
 
-    # =====================================================
-    # 파티
-    # =====================================================
     for party_number in range(
         1,
         st.session_state.party_count
@@ -3416,9 +4637,6 @@ else:
                 )
 
 
-    # =====================================================
-    # 현재 보스 완료
-    # =====================================================
     st.write("")
 
 
@@ -3449,7 +4667,8 @@ else:
             st.session_state[
                 "party_completed_message"
             ] = (
-                f"{display_name} 편성이 완료되었습니다."
+                f"{display_name} "
+                "편성이 완료되었습니다."
             )
 
 
@@ -3541,8 +4760,10 @@ else:
             )
 
 
-            c1, c2 = st.columns(
-                2
+            c1, c2 = (
+                st.columns(
+                    2
+                )
             )
 
 
@@ -3591,9 +4812,6 @@ else:
                     st.rerun()
 
 
-        # =================================================
-        # 전체 완료
-        # =================================================
         st.divider()
 
 
@@ -3706,9 +4924,6 @@ else:
             )
 
 
-        # =================================================
-        # 텍스트 결과
-        # =================================================
         final_text = (
             build_final_text()
         )
@@ -3724,9 +4939,6 @@ else:
             )
 
 
-        # =================================================
-        # PNG
-        # =================================================
         png_bytes = (
             make_party_image()
         )
