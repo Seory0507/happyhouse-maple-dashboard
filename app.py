@@ -1823,6 +1823,51 @@ def character_option_text(cid):
     return f"{data['nickname']} | {data['job']} | {data['server']} | {format_hexa(data['hexa'])}"
 
 
+def get_boss_hope_candidates(boss_name, difficulty):
+    exact_matches = {}
+    other_matches = {}
+
+    for cid, character in character_lookup.items():
+        nickname = character["nickname"]
+        hopes = boss_hope_lookup.get(nickname, [])
+
+        for hope in hopes:
+            if clean(hope.get("보스", "")) != boss_name:
+                continue
+
+            hope_data = {
+                "cid": cid,
+                "nickname": nickname,
+                "job": character["job"],
+                "server": character["server"],
+                "hexa": character["hexa"],
+                "difficulty": clean(hope.get("난이도", "")),
+                "people": int(hope.get("인원", 1)),
+            }
+
+            if hope_data["difficulty"] == difficulty:
+                exact_matches[cid] = hope_data
+            else:
+                other_matches[cid] = hope_data
+
+    return list(exact_matches.values()), list(other_matches.values())
+
+
+def hope_candidate_text(candidate):
+    return (
+        f"{candidate['nickname']} | {candidate['job']} | "
+        f"헥사 {format_hexa(candidate['hexa'])} | {candidate['people']}인 희망"
+    )
+
+
+def other_hope_text(candidate):
+    return (
+        f"{candidate['nickname']} | {candidate['job']} | "
+        f"{candidate['difficulty']} · {candidate['people']}인 희망 | "
+        f"헥사 {format_hexa(candidate['hexa'])}"
+    )
+
+
 def calculate_party_stats(member_ids):
     if not member_ids:
         return 0, 0
@@ -2355,6 +2400,134 @@ else:
             key="party_count",
         )
 
+    selected_difficulty = st.session_state.get("party_boss_difficulty", "")
+    exact_hope_candidates, other_hope_candidates = get_boss_hope_candidates(
+        selected_boss,
+        selected_difficulty,
+    )
+
+    currently_assigned = set()
+    for party_number in range(1, st.session_state.party_count + 1):
+        currently_assigned.update(
+            st.session_state.get(f"party_members_{party_number}", [])
+        )
+
+    unassigned_exact = [
+        candidate
+        for candidate in exact_hope_candidates
+        if candidate["cid"] not in currently_assigned
+    ]
+
+    st.markdown(
+        f"""
+<div class="party-section-title">
+🎯 {html.escape(selected_difficulty)} {html.escape(selected_boss)} 희망자
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    if exact_hope_candidates:
+        st.caption(
+            f"총 {len(exact_hope_candidates)}명 희망 · "
+            f"현재 미편성 {len(unassigned_exact)}명"
+        )
+
+        if unassigned_exact:
+            candidate_by_id = {
+                candidate["cid"]: candidate
+                for candidate in unassigned_exact
+            }
+            candidate_ids = list(candidate_by_id.keys())
+
+            selected_hope_ids = st.multiselect(
+                "희망자 선택",
+                options=candidate_ids,
+                format_func=lambda cid: hope_candidate_text(candidate_by_id[cid]),
+                key=f"hope_pick_{selected_boss}_{selected_difficulty}",
+                placeholder="파티에 넣을 희망자를 선택하세요",
+                label_visibility="collapsed",
+            )
+
+            add_col1, add_col2 = st.columns([1.5, 1])
+
+            with add_col1:
+                target_party = st.selectbox(
+                    "추가할 파티",
+                    options=list(range(1, st.session_state.party_count + 1)),
+                    format_func=lambda x: f"{x}파티",
+                    key=f"hope_target_party_{st.session_state.party_count}",
+                )
+
+            with add_col2:
+                st.write("")
+                st.write("")
+
+                if st.button(
+                    "➕ 선택한 희망자 추가",
+                    key=f"add_hope_to_party_{selected_boss}_{selected_difficulty}",
+                    use_container_width=True,
+                ):
+                    if not selected_hope_ids:
+                        st.warning("추가할 희망자를 먼저 선택해주세요.")
+                    else:
+                        member_key = f"party_members_{target_party}"
+                        current_members = list(st.session_state.get(member_key, []))
+
+                        other_party_members = set()
+                        for party_number in range(1, st.session_state.party_count + 1):
+                            if party_number == target_party:
+                                continue
+                            other_party_members.update(
+                                st.session_state.get(f"party_members_{party_number}", [])
+                            )
+
+                        addable_ids = [
+                            cid
+                            for cid in selected_hope_ids
+                            if cid not in current_members
+                            and cid not in other_party_members
+                        ]
+
+                        remaining_slots = max(0, 6 - len(current_members))
+                        added_ids = addable_ids[:remaining_slots]
+
+                        if added_ids:
+                            st.session_state[member_key] = current_members + added_ids
+
+                        skipped_count = len(addable_ids) - len(added_ids)
+                        if skipped_count > 0:
+                            st.session_state["hope_add_message"] = (
+                                f"{len(added_ids)}명을 {target_party}파티에 추가했습니다. "
+                                f"정원 6명 때문에 {skipped_count}명은 추가하지 못했습니다."
+                            )
+                        elif added_ids:
+                            st.session_state["hope_add_message"] = (
+                                f"{len(added_ids)}명을 {target_party}파티에 추가했습니다."
+                            )
+                        else:
+                            st.session_state["hope_add_message"] = (
+                                "선택한 희망자는 이미 다른 파티에 편성되어 있습니다."
+                            )
+
+                        st.rerun()
+        else:
+            st.success("이 난이도를 희망한 사람은 모두 현재 파티에 편성되어 있습니다.")
+    else:
+        st.info("이 보스와 난이도를 희망한 사람이 아직 없습니다.")
+
+    if st.session_state.get("hope_add_message"):
+        st.info(st.session_state["hope_add_message"])
+        del st.session_state["hope_add_message"]
+
+    if other_hope_candidates:
+        with st.expander(
+            f"같은 보스의 다른 난이도 희망자 {len(other_hope_candidates)}명 보기",
+            expanded=False,
+        ):
+            for candidate in other_hope_candidates:
+                st.write("• " + other_hope_text(candidate))
+
     st.divider()
 
     selected_in_previous_parties = set()
@@ -2410,6 +2583,32 @@ else:
                 st.metric("평균 헥사환산", format_hexa(avg_hexa))
 
     st.write("")
+
+    exact_candidate_ids = {
+        candidate["cid"]
+        for candidate in exact_hope_candidates
+    }
+    assigned_candidate_ids = set()
+    for party_number in range(1, st.session_state.party_count + 1):
+        assigned_candidate_ids.update(
+            st.session_state.get(f"party_members_{party_number}", [])
+        )
+
+    unassigned_candidate_ids = exact_candidate_ids - assigned_candidate_ids
+
+    if exact_candidate_ids:
+        if unassigned_candidate_ids:
+            unassigned_names = [
+                character_lookup[cid]["nickname"]
+                for cid in exact_candidate_ids
+                if cid in unassigned_candidate_ids
+            ]
+            st.warning(
+                "⚠️ 아직 편성되지 않은 희망자: "
+                + ", ".join(unassigned_names)
+            )
+        else:
+            st.success("✅ 이 보스·난이도의 희망자가 모두 편성되었습니다.")
 
     if st.button(
         "✅ 이 보스 편성 완료",
