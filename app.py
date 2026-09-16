@@ -26,8 +26,6 @@ st.set_page_config(
 
 # =========================================================
 # 보스 / 난이도
-# 메이플스토리 공식 보스 목록 기준
-# 스우 이후
 # =========================================================
 BOSS_DIFFICULTIES = {
     "스우": [
@@ -144,7 +142,6 @@ def local_image_base64(path):
         return ""
 
     try:
-
         with open(path, "rb") as f:
             data = f.read()
 
@@ -272,6 +269,7 @@ def check_password():
     ):
 
         if not APP_PASSWORD:
+
             st.error(
                 "앱 비밀번호가 설정되어 있지 않습니다."
             )
@@ -279,7 +277,6 @@ def check_password():
         elif password == APP_PASSWORD:
 
             st.session_state.password_ok = True
-
             st.rerun()
 
         else:
@@ -304,7 +301,6 @@ def get_sheet_id(sheet_url):
         return None
 
     try:
-
         return (
             sheet_url
             .split("/d/")[1]
@@ -323,9 +319,7 @@ def get_drive_file_id(url):
     if not url:
         return None
 
-    url = str(
-        url
-    ).strip()
+    url = str(url).strip()
 
     match = re.search(
         r"/file/d/([^/]+)",
@@ -348,7 +342,6 @@ def get_drive_file_id(url):
 
 # =========================================================
 # 외부 이미지
-# 6시간 캐시
 # =========================================================
 @st.cache_data(ttl=21600)
 def load_image_bytes(url):
@@ -421,7 +414,6 @@ def load_image_base64(url):
 
 # =========================================================
 # 구글 시트
-# 5분 캐시
 # =========================================================
 @st.cache_data(ttl=300)
 def load_character_data():
@@ -652,21 +644,15 @@ def rank_html(rank):
 
     if num == 1:
 
-        path = (
-            "assets/rank_gold.png"
-        )
+        path = "assets/rank_gold.png"
 
     elif num == 2:
 
-        path = (
-            "assets/rank_silver.png"
-        )
+        path = "assets/rank_silver.png"
 
     elif num == 3:
 
-        path = (
-            "assets/rank_bronze.png"
-        )
+        path = "assets/rank_bronze.png"
 
     else:
 
@@ -866,7 +852,7 @@ st.markdown(
 }
 
 
-/* CHARACTER */
+/* CHARACTER IMAGE */
 
 .character-image-box {
     position: relative;
@@ -937,7 +923,7 @@ st.markdown(
 }
 
 
-/* JOB / META */
+/* JOB */
 
 .job-row {
     display: flex;
@@ -1261,7 +1247,6 @@ maple_logo = local_image_base64(
     "assets/logo_maplestory.png"
 )
 
-
 main_logo_html = ""
 
 if main_logo:
@@ -1359,8 +1344,7 @@ df = df.reset_index(
 )
 
 df["_캐릭터ID"] = (
-    df.index
-    .astype(int)
+    df.index.astype(int)
 )
 
 
@@ -1445,7 +1429,7 @@ all_character_ids = list(
 
 
 # =========================================================
-# CARD
+# CHARACTER CARD
 # =========================================================
 def build_card(row):
 
@@ -1520,13 +1504,11 @@ def build_card(row):
         target = "미정"
 
 
-    # 로컬 이미지 우선
     image = get_character_local_image(
         nickname_raw
     )
 
 
-    # 로컬에 없으면 Drive
     if not image:
 
         image_url = clean(
@@ -1710,8 +1692,7 @@ def calculate_party_stats(
             cid
         ]["combat"]
 
-        for cid
-        in member_ids
+        for cid in member_ids
     )
 
 
@@ -1721,8 +1702,7 @@ def calculate_party_stats(
             cid
         ]["hexa"]
 
-        for cid
-        in member_ids
+        for cid in member_ids
 
         if character_lookup[
             cid
@@ -1767,7 +1747,7 @@ if "show_final_result" not in st.session_state:
 
 
 # =========================================================
-# 파티 위젯 키 초기화
+# PARTY WIDGET RESET
 # =========================================================
 def clear_party_widget_keys():
 
@@ -1775,8 +1755,6 @@ def clear_party_widget_keys():
         "party_boss_name",
         "party_boss_difficulty",
         "party_count",
-
-        # 옛 버전 잔여 키도 정리
         "party_target_boss",
     ]
 
@@ -1901,7 +1879,7 @@ if "party_count" not in st.session_state:
 
 
 # =========================================================
-# 현재 보스 편성 완료
+# 보스 편성 저장
 # =========================================================
 def save_current_boss():
 
@@ -2021,7 +1999,6 @@ def save_current_boss():
 
 # =========================================================
 # 최종 텍스트
-# 파티 번호 없음
 # =========================================================
 def build_final_text():
 
@@ -2096,29 +2073,42 @@ def build_final_text():
 
 
 # =========================================================
-# 한글 폰트
+# 한글 폰트 찾기
+# assets/fonts 우선
+# Variable 폰트도 대응
 # =========================================================
-def find_korean_font():
+def find_korean_font(bold=False):
 
-    candidates = [
-
-        "C:/Windows/Fonts/malgun.ttf",
-
-        "C:/Windows/Fonts/malgunbd.ttf",
-
-        "assets/NotoSansKR-Regular.ttf",
-
-        "/usr/share/fonts/opentype/noto/"
-        "NotoSansCJK-Regular.ttc",
-
-        "/usr/share/fonts/truetype/nanum/"
-        "NanumGothic.ttf",
-
-        "/usr/share/fonts/truetype/dejavu/"
-        "DejaVuSans.ttf",
-    ]
+    font_dir = os.path.join(
+        "assets",
+        "fonts",
+    )
 
 
+    if bold:
+
+        candidates = [
+            "assets/fonts/NotoSansKR-Bold.ttf",
+            "assets/fonts/NotoSansKR-Bold.otf",
+            "assets/NotoSansKR-Bold.ttf",
+            "C:/Windows/Fonts/malgunbd.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+        ]
+
+    else:
+
+        candidates = [
+            "assets/fonts/NotoSansKR-Regular.ttf",
+            "assets/fonts/NotoSansKR-Regular.otf",
+            "assets/NotoSansKR-Regular.ttf",
+            "C:/Windows/Fonts/malgun.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        ]
+
+
+    # 먼저 정확한 파일명 검색
     for path in candidates:
 
         if os.path.exists(
@@ -2128,13 +2118,170 @@ def find_korean_font():
             return path
 
 
+    # assets/fonts 안에서 자동 검색
+    if os.path.isdir(
+        font_dir
+    ):
+
+        font_files = [
+
+            filename
+
+            for filename
+            in os.listdir(
+                font_dir
+            )
+
+            if filename.lower().endswith(
+                (
+                    ".ttf",
+                    ".otf",
+                    ".ttc",
+                )
+            )
+        ]
+
+
+        # Bold 요청이면 Bold 파일 먼저
+        if bold:
+
+            for filename in font_files:
+
+                lower_name = filename.lower()
+
+                if (
+                    (
+                        "noto"
+                        in lower_name
+                    )
+                    and
+                    (
+                        "korean"
+                        in lower_name
+                        or
+                        "sanskr"
+                        in lower_name
+                        or
+                        "kr"
+                        in lower_name
+                    )
+                    and
+                    "bold"
+                    in lower_name
+                ):
+
+                    return os.path.join(
+                        font_dir,
+                        filename,
+                    )
+
+
+        # Regular 또는 Variable 검색
+        for filename in font_files:
+
+            lower_name = filename.lower()
+
+            if (
+                "noto"
+                in lower_name
+            ) and (
+                "korean"
+                in lower_name
+                or
+                "sanskr"
+                in lower_name
+                or
+                "kr"
+                in lower_name
+            ):
+
+                return os.path.join(
+                    font_dir,
+                    filename,
+                )
+
+
+        # Noto가 아니어도 fonts 폴더에
+        # 폰트가 하나뿐이면 그것을 사용
+        if len(
+            font_files
+        ) == 1:
+
+            return os.path.join(
+                font_dir,
+                font_files[0],
+            )
+
+
     return None
 
 
 # =========================================================
+# 폰트 로딩
+# =========================================================
+def load_party_fonts():
+
+    regular_path = find_korean_font(
+        bold=False
+    )
+
+    bold_path = find_korean_font(
+        bold=True
+    )
+
+
+    if not bold_path:
+        bold_path = regular_path
+
+
+    if regular_path:
+
+        try:
+
+            title_font = ImageFont.truetype(
+                bold_path or regular_path,
+                46,
+            )
+
+            boss_font = ImageFont.truetype(
+                bold_path or regular_path,
+                28,
+            )
+
+            member_font = ImageFont.truetype(
+                regular_path,
+                22,
+            )
+
+            stat_font = ImageFont.truetype(
+                regular_path,
+                17,
+            )
+
+
+            return (
+                title_font,
+                boss_font,
+                member_font,
+                stat_font,
+            )
+
+        except Exception:
+            pass
+
+
+    # 최후 fallback
+    return (
+        ImageFont.load_default(),
+        ImageFont.load_default(),
+        ImageFont.load_default(),
+        ImageFont.load_default(),
+    )
+
+
+# =========================================================
 # 최종 PNG
-# 2열 보스 배치
-# 파티 번호 없음
+# 2열 배치
 # =========================================================
 def make_party_image():
 
@@ -2174,58 +2321,12 @@ def make_party_image():
     # =====================================================
     # 폰트
     # =====================================================
-    font_path = (
-        find_korean_font()
-    )
-
-
-    if font_path:
-
-        title_font = (
-            ImageFont.truetype(
-                font_path,
-                46,
-            )
-        )
-
-        boss_font = (
-            ImageFont.truetype(
-                font_path,
-                28,
-            )
-        )
-
-        member_font = (
-            ImageFont.truetype(
-                font_path,
-                22,
-            )
-        )
-
-        stat_font = (
-            ImageFont.truetype(
-                font_path,
-                17,
-            )
-        )
-
-    else:
-
-        title_font = (
-            ImageFont.load_default()
-        )
-
-        boss_font = (
-            ImageFont.load_default()
-        )
-
-        member_font = (
-            ImageFont.load_default()
-        )
-
-        stat_font = (
-            ImageFont.load_default()
-        )
+    (
+        title_font,
+        boss_font,
+        member_font,
+        stat_font,
+    ) = load_party_fonts()
 
 
     # =====================================================
@@ -2302,9 +2403,7 @@ def make_party_image():
 
             if width <= max_width:
 
-                current = (
-                    candidate
-                )
+                current = candidate
 
             else:
 
@@ -2411,7 +2510,6 @@ def make_party_image():
 
             party_rows.append(
                 {
-
                     "lines":
                         wrapped_lines,
 
@@ -2458,7 +2556,6 @@ def make_party_image():
 
         boss_cards.append(
             {
-
                 "boss_name":
                     display_name,
 
@@ -2603,7 +2700,7 @@ def make_party_image():
 
 
     # =====================================================
-    # 카드 그리기
+    # 보스 카드 그리기
     # =====================================================
     def draw_boss_card(
         x,
@@ -2641,7 +2738,7 @@ def make_party_image():
         )
 
 
-        # 보스 헤더
+        # 보스 제목
         draw.rounded_rectangle(
             [
                 x + 16,
@@ -2689,6 +2786,7 @@ def make_party_image():
         )
 
 
+        # 각 파티
         for row_data in card_data[
             "rows"
         ]:
@@ -2732,6 +2830,7 @@ def make_party_image():
             )
 
 
+            # 닉네임
             for line in row_data[
                 "lines"
             ]:
@@ -2753,6 +2852,7 @@ def make_party_image():
                 text_y += 28
 
 
+            # 스탯
             stat_y = (
                 current_y
                 + row_height
@@ -2797,6 +2897,7 @@ def make_party_image():
 
     for row_height in row_heights:
 
+        # 왼쪽
         left_x = (
             outer_padding
         )
@@ -2814,6 +2915,7 @@ def make_party_image():
         card_index += 1
 
 
+        # 오른쪽
         if (
             card_index
             < len(
@@ -3126,8 +3228,6 @@ else:
         )
 
 
-    # 보스를 바꿨는데 기존 난이도가
-    # 새 보스에 존재하지 않을 경우 제거
     difficulty_options = (
         BOSS_DIFFICULTIES[
             selected_boss
@@ -3135,6 +3235,7 @@ else:
     )
 
 
+    # 새 보스에 없는 난이도 값이면 초기화
     if (
         "party_boss_difficulty"
         in st.session_state
@@ -3182,7 +3283,7 @@ else:
 
 
     # =====================================================
-    # 파티 1~10
+    # 파티
     # =====================================================
     for party_number in range(
         1,
@@ -3271,7 +3372,6 @@ else:
         )
 
 
-        # 통계만 표시
         if selected_members:
 
             total_combat, avg_hexa = (
@@ -3317,7 +3417,7 @@ else:
 
 
     # =====================================================
-    # 현재 보스 편성 완료
+    # 현재 보스 완료
     # =====================================================
     st.write("")
 
@@ -3607,7 +3707,7 @@ else:
 
 
         # =================================================
-        # 텍스트
+        # 텍스트 결과
         # =================================================
         final_text = (
             build_final_text()
