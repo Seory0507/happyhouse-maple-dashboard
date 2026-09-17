@@ -603,27 +603,54 @@ def read_maplescouter_page_spec(nickname):
                                 break
 
             # 캐릭터 외형 이미지 후보
-            # 펫/아이템 이미지를 잘못 고르지 않도록 Nexon 캐릭터 look 경로만 허용한다.
-            image_candidates = page.locator('img[src*="/static/maplestory/character/look/"]').evaluate_all(
+            # MapleScouter는 캐릭터 코디를 <img>가 아니라 div의 background-image로 렌더링한다.
+            # Elements에서 확인한 Nexon 캐릭터 look 경로만 허용해 펫/아이템 이미지를 배제한다.
+            image_candidates = page.locator('div[style*="/static/maplestory/character/look/"]').evaluate_all(
                 """els => els.map((e, idx) => {
                     const r = e.getBoundingClientRect();
                     const style = window.getComputedStyle(e);
+                    const bg = style.backgroundImage || e.style.backgroundImage || '';
+                    const match = bg.match(/url\(["']?(.*?)["']?\)/);
                     return {
                         index: idx,
-                        src: e.currentSrc || e.src || '',
-                        alt: e.alt || '',
+                        src: match ? match[1] : '',
+                        alt: e.getAttribute('aria-label') || '',
                         width: Math.round(r.width),
                         height: Math.round(r.height),
                         area: Math.round(r.width * r.height),
                         visible: !!(r.width && r.height) && style.display !== 'none' && style.visibility !== 'hidden',
                         top: Math.round(r.top),
-                        left: Math.round(r.left)
+                        left: Math.round(r.left),
+                        background: bg
                     };
-                }).filter(x => x.src)"""
+                }).filter(x => x.src && x.src.includes('/static/maplestory/character/look/'))"""
             )
 
-            # 화면에 실제로 보이는 이미지 중 면적이 큰 것을 우선한다.
-            # 같은 캐릭터 이미지가 여러 UI 영역에 중복 렌더링될 수 있어 URL도 중복 제거한다.
+            # 혹시 inline style selector에 안 잡히는 경우를 대비해 computed style도 전체 DOM에서 한 번 더 확인한다.
+            if not image_candidates:
+                image_candidates = page.locator('*').evaluate_all(
+                    """els => els.map((e, idx) => {
+                        const r = e.getBoundingClientRect();
+                        const style = window.getComputedStyle(e);
+                        const bg = style.backgroundImage || '';
+                        if (!bg.includes('/static/maplestory/character/look/')) return null;
+                        const match = bg.match(/url\(["']?(.*?)["']?\)/);
+                        return match ? {
+                            index: idx,
+                            src: match[1],
+                            alt: e.getAttribute('aria-label') || '',
+                            width: Math.round(r.width),
+                            height: Math.round(r.height),
+                            area: Math.round(r.width * r.height),
+                            visible: !!(r.width && r.height) && style.display !== 'none' && style.visibility !== 'hidden',
+                            top: Math.round(r.top),
+                            left: Math.round(r.left),
+                            background: bg
+                        } : null;
+                    }).filter(Boolean)"""
+                )
+
+            # 화면에 실제로 보이는 후보를 우선하고, 같은 URL은 중복 제거한다.
             deduped_candidates = []
             seen_image_urls = set()
             for candidate in image_candidates:
@@ -2876,7 +2903,7 @@ if st.session_state["show_page_settings"]:
                         st.metric("헥사 원본값", "정밀값 ✅" if result.get('hexa_exact') else "축약값/미확인 ⚠️")
 
                     if result.get('image_url'):
-                        st.success("캐릭터 코디 이미지 후보를 찾았습니다.")
+                        st.success("캐릭터 코디 background-image URL을 찾았습니다.")
                         st.image(result['image_url'], width=180)
                         with st.expander("코디 이미지 URL 보기"):
                             st.code(result['image_url'], language=None)
@@ -2886,7 +2913,7 @@ if st.session_state["show_page_settings"]:
                     with st.expander("🖼️ 캐릭터 외형 이미지 후보 보기"):
                         candidates = result.get("image_candidates") or []
                         if not candidates:
-                            st.write("`/static/maplestory/character/look/` 경로의 이미지가 없습니다.")
+                            st.write("`background-image`에서 `/static/maplestory/character/look/` 경로를 찾지 못했습니다.")
                         for idx, candidate in enumerate(candidates[:10], start=1):
                             st.write(
                                 f"**후보 {idx}** · {candidate.get('width', 0)}×{candidate.get('height', 0)} "
