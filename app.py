@@ -783,8 +783,18 @@ def competition_ranks(values_by_row):
     }
 
 
+def _a1_col(col_num):
+    """1-based 열 번호를 A1 표기 열 문자로 변환한다."""
+    result = ""
+    n = int(col_num)
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        result = chr(65 + rem) + result
+    return result
+
+
 def apply_character_spec_update(nickname, latest_spec):
-    """레벨·전투력·헥사환산·외형을 반영하고 전체 순위를 다시 계산한다."""
+    """레벨·전투력·헥사환산·외형을 한 번에 반영하고 전체 순위를 다시 계산한다."""
     worksheet = get_character_worksheet()
     values = worksheet.get_all_values()
     if not values:
@@ -801,39 +811,72 @@ def apply_character_spec_update(nickname, latest_spec):
         col_index["대표이미지URL원본"] = headers.index("대표이미지URL원본") + 1
 
     target_row = None
+    nickname_idx = col_index["닉네임"] - 1
     for row_number, row_values in enumerate(values[1:], start=2):
-        nick_idx = col_index["닉네임"] - 1
-        row_nickname = clean(row_values[nick_idx]) if nick_idx < len(row_values) else ""
+        row_nickname = clean(row_values[nickname_idx]) if nickname_idx < len(row_values) else ""
         if row_nickname == nickname:
             target_row = row_number
             break
     if target_row is None:
         raise RuntimeError(f"캐릭터 목록 시트에서 {nickname}을(를) 찾지 못했습니다.")
 
-    worksheet.update_cell(target_row, col_index["레벨"], int(latest_spec["level"]))
-    worksheet.update_cell(target_row, col_index["전투력"], int(latest_spec["combat"]))
-    worksheet.update_cell(target_row, col_index["헥사환산"], int(latest_spec["hexa"]))
+    level = int(latest_spec["level"])
+    combat = int(latest_spec["combat"])
+    hexa = int(latest_spec["hexa"])
     image_url = clean(latest_spec.get("image_url", ""))
-    if image_url and "대표이미지URL원본" in col_index:
-        worksheet.update_cell(target_row, col_index["대표이미지URL원본"], image_url)
 
-    values = worksheet.get_all_values()
+    # 새 헥환값을 반영한 상태에서 전체 순위를 메모리에서 먼저 계산한다.
     hexa_idx = col_index["헥사환산"] - 1
-    nickname_idx = col_index["닉네임"] - 1
     hexa_by_row = {}
     for row_number, row_values in enumerate(values[1:], start=2):
         row_nickname = clean(row_values[nickname_idx]) if nickname_idx < len(row_values) else ""
         if not row_nickname:
             continue
-        raw_hexa = row_values[hexa_idx] if hexa_idx < len(row_values) else ""
-        hexa_by_row[row_number] = parse_number(raw_hexa)
+        if row_number == target_row:
+            hexa_by_row[row_number] = hexa
+        else:
+            raw_hexa = row_values[hexa_idx] if hexa_idx < len(row_values) else ""
+            hexa_by_row[row_number] = parse_number(raw_hexa)
 
     ranks = competition_ranks(hexa_by_row)
-    rank_col = col_index["순위"]
+
+    updates = [
+        {
+            "range": f"{_a1_col(col_index['레벨'])}{target_row}",
+            "values": [[level]],
+        },
+        {
+            "range": f"{_a1_col(col_index['전투력'])}{target_row}",
+            "values": [[combat]],
+        },
+        {
+            "range": f"{_a1_col(col_index['헥사환산'])}{target_row}",
+            "values": [[hexa]],
+        },
+    ]
+
+    if image_url and "대표이미지URL원본" in col_index:
+        updates.append(
+            {
+                "range": f"{_a1_col(col_index['대표이미지URL원본'])}{target_row}",
+                "values": [[image_url]],
+            }
+        )
+
+    rank_col_letter = _a1_col(col_index["순위"])
     for row_number, rank_value in ranks.items():
-        worksheet.update_cell(row_number, rank_col, "" if rank_value is None else int(rank_value))
+        updates.append(
+            {
+                "range": f"{rank_col_letter}{row_number}",
+                "values": [["" if rank_value is None else int(rank_value)]],
+            }
+        )
+
+    # 여러 번 update_cell을 호출하지 않고 한 번의 요청으로 저장한다.
+    worksheet.batch_update(updates, value_input_option="USER_ENTERED")
 
     load_character_data.clear()
+    load_boss_hope_data.clear()
 
 
 # =========================================================
@@ -3209,7 +3252,7 @@ if page == "👥 캐릭터 목록":
                                         st.rerun()
                                     except Exception as e:
                                         st.error("스펙 업데이트에 실패했습니다.")
-                                        st.code(str(e))
+                                        st.code(f"{type(e).__name__}: {e}")
 
                 button_col1, button_col2 = st.columns(2)
 
