@@ -76,6 +76,7 @@ APP_PASSWORD = get_config("APP_PASSWORD")
 ADMIN_PASSWORD = get_config("ADMIN_PASSWORD")
 BOSS_HOPE_SHEET_NAME = "보스희망"
 MAPLESCOUTER_API_URL = "https://api.maplescouter.com/api/id"
+MAPLESCOUTER_API_KEY = get_config("MAPLESCOUTER_API_KEY")
 
 
 # =========================================================
@@ -402,6 +403,12 @@ def fetch_maplescouter_spec(nickname):
     if not nickname:
         raise ValueError("닉네임이 비어 있습니다.")
 
+    if not MAPLESCOUTER_API_KEY:
+        raise RuntimeError(
+            "MAPLESCOUTER_API_KEY가 설정되어 있지 않습니다. "
+            "Streamlit Secrets 또는 .env에 키를 추가해주세요."
+        )
+
     response = requests.get(
         MAPLESCOUTER_API_URL,
         params={
@@ -410,9 +417,18 @@ def fetch_maplescouter_spec(nickname):
             "region": "kms",
         },
         headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json, text/plain, */*",
-            "Referer": "https://maplescouter.com/",
+            "accept": "*/*",
+            "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "api-key": MAPLESCOUTER_API_KEY,
+            "cache-control": "public, max-age=300",
+            "content-type": "application/json",
+            "origin": "https://maplescouter.com",
+            "referer": "https://maplescouter.com/",
+            "user-agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/152.0.0.0 Safari/537.36"
+            ),
         },
         timeout=20,
     )
@@ -434,10 +450,13 @@ def fetch_maplescouter_spec(nickname):
     if level is None or combat is None or hexa is None:
         raise RuntimeError("MapleScouter 응답에 레벨/전투력/헥사환산 값이 없습니다.")
 
+    image_url = clean(record.get("champion_image", ""))
+
     return {
         "level": int(level),
         "combat": int(combat),
         "hexa": int(hexa),
+        "image_url": image_url,
     }
 
 
@@ -455,7 +474,7 @@ def competition_ranks(values_by_row):
 
 
 def apply_character_spec_update(nickname, latest_spec):
-    """캐릭터 스펙 3종을 반영하고 헥사환산 원본값으로 전체 순위를 다시 계산한다."""
+    """레벨·전투력·헥사환산·외형을 반영하고 전체 순위를 다시 계산한다."""
     worksheet = get_character_worksheet()
     values = worksheet.get_all_values()
 
@@ -469,6 +488,8 @@ def apply_character_spec_update(nickname, latest_spec):
         raise RuntimeError("캐릭터목록 시트에 필요한 열이 없습니다: " + ", ".join(missing))
 
     col_index = {name: headers.index(name) + 1 for name in required}
+    if "대표이미지URL원본" in headers:
+        col_index["대표이미지URL원본"] = headers.index("대표이미지URL원본") + 1
     target_row = None
 
     for row_number, row_values in enumerate(values[1:], start=2):
@@ -481,10 +502,14 @@ def apply_character_spec_update(nickname, latest_spec):
     if target_row is None:
         raise RuntimeError(f"캐릭터목록 시트에서 {nickname}을(를) 찾지 못했습니다.")
 
-    # 레벨 / 전투력 / 헥사환산 원본값 반영
+    # 레벨 / 전투력 / 헥사환산 원본값 / 최신 캐릭터 외형 반영
     worksheet.update_cell(target_row, col_index["레벨"], int(latest_spec["level"]))
     worksheet.update_cell(target_row, col_index["전투력"], int(latest_spec["combat"]))
     worksheet.update_cell(target_row, col_index["헥사환산"], int(latest_spec["hexa"]))
+
+    image_url = clean(latest_spec.get("image_url", ""))
+    if image_url and "대표이미지URL원본" in col_index:
+        worksheet.update_cell(target_row, col_index["대표이미지URL원본"], image_url)
 
     # 방금 반영한 값을 포함해 전체 헥사환산으로 공동순위 재계산
     values = worksheet.get_all_values()
@@ -1307,6 +1332,7 @@ if spec_update_param:
                 "level": int(parse_number(current_row.get("레벨", "")) or 0),
                 "combat": int(parse_number(current_row.get("전투력", "")) or 0),
                 "hexa": int(parse_number(current_row.get("헥사환산", "")) or 0),
+                "image_url": clean(current_row.get("대표이미지URL원본", "")),
             }
 
             st.session_state["spec_update_preview"] = {
@@ -1438,11 +1464,12 @@ def build_card(row):
     combat_text = format_combat_power(row.get("전투력", ""))
     hexa_text = format_hexa(row.get("헥사환산", ""))
 
-    image = get_character_local_image(nickname_raw)
+    # 최신 코디가 반영된 시트 URL을 우선 사용하고, 실패하면 로컬 이미지를 백업으로 사용
+    image_url = clean(row.get("대표이미지URL원본", ""))
+    image = load_image_base64(image_url) if image_url else ""
 
     if not image:
-        image_url = clean(row.get("대표이미지URL원본", ""))
-        image = load_image_base64(image_url)
+        image = get_character_local_image(nickname_raw)
 
     image_html = ""
     if image:
@@ -1547,13 +1574,13 @@ def open_character_image_for_render(row):
     local_path = get_character_local_image_path(nickname)
 
     try:
-        if local_path:
-            return Image.open(local_path).convert("RGBA")
-
         image_url = clean(row.get("대표이미지URL원본", ""))
         image_bytes = load_image_bytes(image_url)
         if image_bytes:
             return Image.open(BytesIO(image_bytes)).convert("RGBA")
+
+        if local_path:
+            return Image.open(local_path).convert("RGBA")
 
     except Exception:
         return None
@@ -2541,56 +2568,69 @@ if st.session_state.get("boss_hope_saved_message"):
 if "main_page" not in st.session_state:
     st.session_state["main_page"] = "👥 캐릭터 목록"
 
-st.sidebar.markdown("### 메뉴")
-
-character_menu_label = "👥 캐릭터 목록"
-party_menu_label = "⚔️ 보스 파티 만들기"
-
-if st.session_state["main_page"] == character_menu_label:
-    character_menu_label += "  ✓"
-else:
-    party_menu_label += "  ✓"
-
-if st.sidebar.button(character_menu_label, key="sidebar_character_page", use_container_width=True):
-    st.session_state["main_page"] = "👥 캐릭터 목록"
-
-if st.sidebar.button(party_menu_label, key="sidebar_party_page", use_container_width=True):
-    st.session_state["main_page"] = "⚔️ 보스 파티 만들기"
-
 if "page_admin_ok" not in st.session_state:
     st.session_state["page_admin_ok"] = False
 
-settings_label = "⚙️ 페이지 설정"
-if st.session_state["page_admin_ok"]:
-    settings_label += " · 관리자 모드"
+if "show_page_settings" not in st.session_state:
+    st.session_state["show_page_settings"] = False
 
-with st.sidebar.expander(settings_label, expanded=False):
-    if st.session_state["page_admin_ok"]:
-        st.success("관리자 로그인됨")
-        st.caption("앞으로 관리자 전용 기능은 이곳에 추가됩니다.")
-        if st.button("관리자 로그아웃", key="page_admin_logout", use_container_width=True):
-            st.session_state["page_admin_ok"] = False
-            st.rerun()
-    elif ADMIN_PASSWORD:
-        admin_password_input = st.text_input(
-            "관리자 비밀번호",
-            type="password",
-            key="page_admin_password_input",
-            placeholder="관리자 비밀번호",
-            label_visibility="collapsed",
-        )
-        if st.button("관리자 로그인", key="page_admin_login", use_container_width=True):
-            if admin_password_input == ADMIN_PASSWORD:
-                st.session_state["page_admin_ok"] = True
+st.sidebar.markdown("### 메뉴")
+
+# 세 메뉴를 같은 버튼 형태로 통일. 현재 페이지는 배경이 채워진 primary 버튼으로 표시한다.
+if st.sidebar.button(
+    "👥 캐릭터 목록",
+    key="sidebar_character_page",
+    use_container_width=True,
+    type="primary" if st.session_state["main_page"] == "👥 캐릭터 목록" else "secondary",
+):
+    st.session_state["main_page"] = "👥 캐릭터 목록"
+    st.session_state["show_page_settings"] = False
+    st.rerun()
+
+if st.sidebar.button(
+    "⚔️ 보스 파티 만들기",
+    key="sidebar_party_page",
+    use_container_width=True,
+    type="primary" if st.session_state["main_page"] == "⚔️ 보스 파티 만들기" else "secondary",
+):
+    st.session_state["main_page"] = "⚔️ 보스 파티 만들기"
+    st.session_state["show_page_settings"] = False
+    st.rerun()
+
+settings_label = "⚙️ 페이지 설정 🔓" if st.session_state["page_admin_ok"] else "⚙️ 페이지 설정"
+if st.sidebar.button(
+    settings_label,
+    key="sidebar_page_settings",
+    use_container_width=True,
+    type="primary" if st.session_state["show_page_settings"] else "secondary",
+):
+    st.session_state["show_page_settings"] = not st.session_state["show_page_settings"]
+    st.rerun()
+
+if st.session_state["show_page_settings"]:
+    with st.sidebar.container(border=True):
+        if st.session_state["page_admin_ok"]:
+            st.success("관리자 로그인됨")
+            st.caption("앞으로 관리자 전용 기능은 이곳에 추가됩니다.")
+            if st.button("관리자 로그아웃", key="page_admin_logout", use_container_width=True):
+                st.session_state["page_admin_ok"] = False
                 st.rerun()
-            else:
-                st.error("관리자 비밀번호가 틀렸습니다.")
-    else:
-        st.caption("Secrets에 ADMIN_PASSWORD를 설정하면 관리자 모드를 사용할 수 있습니다.")
-
-if st.session_state.get("spec_update_message"):
-    st.success(st.session_state["spec_update_message"])
-    del st.session_state["spec_update_message"]
+        elif ADMIN_PASSWORD:
+            admin_password_input = st.text_input(
+                "관리자 비밀번호",
+                type="password",
+                key="page_admin_password_input",
+                placeholder="관리자 비밀번호",
+                label_visibility="collapsed",
+            )
+            if st.button("관리자 로그인", key="page_admin_login", use_container_width=True):
+                if admin_password_input == ADMIN_PASSWORD:
+                    st.session_state["page_admin_ok"] = True
+                    st.rerun()
+                else:
+                    st.error("관리자 비밀번호가 틀렸습니다.")
+        else:
+            st.warning("ADMIN_PASSWORD가 설정되어 있지 않습니다.")
 
 page = st.session_state["main_page"]
 
@@ -2672,6 +2712,9 @@ if page == "👥 캐릭터 목록":
                     has_changes = any(
                         current_spec[key] != latest_spec[key]
                         for key in ("level", "combat", "hexa")
+                    ) or (
+                        bool(latest_spec.get("image_url"))
+                        and clean(current_spec.get("image_url", "")) != clean(latest_spec.get("image_url", ""))
                     )
 
                     with st.container(border=True):
@@ -2713,6 +2756,13 @@ if page == "👥 캐릭터 목록":
                                 f"{latest_spec['hexa']:,}  ({format_hexa(latest_spec['hexa'])})"
                             )
 
+                        image_changed = (
+                            bool(latest_spec.get("image_url"))
+                            and clean(current_spec.get("image_url", "")) != clean(latest_spec.get("image_url", ""))
+                        )
+                        if image_changed:
+                            st.caption("🧥 캐릭터 코디 이미지도 최신 외형으로 갱신됩니다.")
+
                         if not has_changes:
                             st.success("✅ 이미 최신 스펙입니다.")
                             if st.button(
@@ -2744,7 +2794,7 @@ if page == "👥 캐릭터 목록":
                                         apply_character_spec_update(nickname, latest_spec)
                                         st.session_state["spec_update_preview"] = None
                                         st.session_state["spec_update_message"] = (
-                                            f"{nickname}의 레벨·전투력·헥사환산과 전체 순위를 업데이트했습니다."
+                                            f"{nickname}의 레벨·전투력·헥사환산·코디 이미지와 전체 순위를 업데이트했습니다."
                                         )
                                         st.rerun()
                                     except Exception as e:
