@@ -932,6 +932,44 @@ st.markdown(
     opacity: .82;
 }
 
+.spec-change-placeholder {
+    display: block;
+    width: 94px;
+    height: 27px;
+}
+
+/* 스펙변경은 실제 Streamlit 버튼을 카드 오른쪽 위에 겹쳐 표시한다.
+   type="tertiary"는 이 버튼에만 사용한다. */
+div[data-testid="column"] {
+    position: relative;
+}
+
+div[data-testid="stButton"]:has(button[data-testid="stBaseButton-tertiary"]) {
+    position: absolute;
+    top: 45px;
+    right: 18px;
+    z-index: 20;
+    width: auto;
+    margin: 0;
+}
+
+button[data-testid="stBaseButton-tertiary"] {
+    min-height: 27px !important;
+    height: 27px !important;
+    padding: 3px 8px !important;
+    border-radius: 8px !important;
+    background: rgba(128, 91, 36, .24) !important;
+    border: 1px solid rgba(219, 164, 75, .42) !important;
+    color: #f4cf8a !important;
+    font-size: .72rem !important;
+    font-weight: 800 !important;
+}
+
+button[data-testid="stBaseButton-tertiary"]:hover {
+    background: rgba(157, 108, 39, .38) !important;
+    color: #fff1cc !important;
+}
+
 .stat-chip-link {
     display: inline-block;
     text-decoration: none !important;
@@ -1202,36 +1240,6 @@ for _, request_row in spec_request_df.iterrows():
             }
         )
 
-try:
-    spec_request_param = st.query_params.get("spec_request", "")
-except Exception:
-    params = st.experimental_get_query_params()
-    spec_request_param = params.get("spec_request", [""])[0]
-
-if isinstance(spec_request_param, list):
-    spec_request_param = spec_request_param[0] if spec_request_param else ""
-
-spec_request_param = clean(spec_request_param)
-valid_nicknames = set(df.get("닉네임", pd.Series(dtype=str)).fillna("").astype(str).str.strip())
-
-if spec_request_param:
-    if spec_request_param in valid_nicknames:
-        created = request_spec_change(spec_request_param)
-        if created:
-            st.session_state["spec_request_message"] = (
-                f"{spec_request_param}의 스펙 변경 요청을 등록했습니다."
-            )
-        else:
-            st.session_state["spec_request_message"] = (
-                f"{spec_request_param}은(는) 이미 변경 확인 대기 중입니다."
-            )
-
-    try:
-        st.query_params.clear()
-    except Exception:
-        st.experimental_set_query_params()
-    st.rerun()
-
 
 # =========================================================
 # SORT / ID
@@ -1352,7 +1360,8 @@ def build_card(row):
     if image:
         image_html = f'<img class="character-image" src="{image}">'
 
-    spec_change_html = ""
+    # 실제 클릭은 카드 밖의 Streamlit 버튼으로 처리한다.
+    # 카드 안에는 위치를 잡아주는 자리표시자만 두고, 요청 중일 때만 상태 배지를 표시한다.
     if nickname_raw in pending_spec_request_nicknames:
         spec_change_html = (
             '<span class="spec-change-pending" title="관리자 확인 대기 중">'
@@ -1360,14 +1369,7 @@ def build_card(row):
             '</span>'
         )
     else:
-        spec_request_url = f"?spec_request={quote(nickname_raw)}"
-        spec_change_html = (
-            '<a class="spec-change-link" '
-            f'href="{spec_request_url}" target="_self" '
-            'title="스펙이 바뀌었으면 눌러주세요">'
-            '🔄 스펙변경'
-            '</a>'
-        )
+        spec_change_html = '<span class="spec-change-placeholder"></span>'
 
     stat_url = get_stat_url(row)
     stat_link_html = ""
@@ -2577,6 +2579,26 @@ if page == "👥 캐릭터 목록":
                 nickname = clean(row.get("닉네임", ""))
 
                 st.markdown(build_card(row), unsafe_allow_html=True)
+
+                # 페이지 이동 없는 실제 Streamlit 버튼.
+                # query parameter 링크를 쓰지 않으므로 로그인/session_state가 유지된다.
+                if nickname not in pending_spec_request_nicknames:
+                    if st.button(
+                        "🔄 스펙변경",
+                        key=f"request_spec_{cid}",
+                        type="tertiary",
+                        help="스펙이 바뀌었으면 눌러주세요",
+                    ):
+                        created = request_spec_change(nickname)
+                        if created:
+                            st.session_state["spec_request_message"] = (
+                                f"{nickname}의 스펙 변경 요청을 등록했습니다."
+                            )
+                        else:
+                            st.session_state["spec_request_message"] = (
+                                f"{nickname}은(는) 이미 변경 확인 대기 중입니다."
+                            )
+                        st.rerun()
 
                 button_col1, button_col2 = st.columns(2)
 
