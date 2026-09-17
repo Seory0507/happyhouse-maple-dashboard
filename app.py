@@ -1171,6 +1171,7 @@ def load_character_card_fonts():
                 "stat_value": ImageFont.truetype(bold_path, 25),
                 "section": ImageFont.truetype(bold_path, 18),
                 "boss": ImageFont.truetype(regular_path, 17),
+                "small": ImageFont.truetype(regular_path, 15),
             }
         except Exception:
             pass
@@ -1186,6 +1187,7 @@ def load_character_card_fonts():
         "stat_value": default,
         "section": default,
         "boss": default,
+        "small": default,
     }
 
 
@@ -1696,7 +1698,8 @@ if spec_update_param:
                 df["닉네임"].fillna("").astype(str).str.strip() == spec_update_param
             ]
             current_row = current_match.iloc[0]
-            latest_spec = fetch_maplescouter_spec(spec_update_param)
+            with st.spinner("🔄 최신 스펙을 불러오는 중입니다..."):
+                latest_spec = fetch_maplescouter_spec(spec_update_param)
 
             current_spec = {
                 "level": int(parse_number(current_row.get("레벨", "")) or 0),
@@ -1781,6 +1784,60 @@ for _, hope_row in boss_hope_df.iterrows():
             "인원": int(people) if people is not None else 1,
         }
     )
+
+
+# =========================================================
+# 추천 파티원 계산
+# =========================================================
+def get_recommended_party_members(nickname, boss, difficulty, base_hexa, tolerance=2000):
+    if base_hexa is None:
+        return []
+
+    candidates = []
+    for other_nickname, hopes in boss_hope_lookup.items():
+        if other_nickname == nickname:
+            continue
+
+        matched = any(
+            clean(hope.get("보스", "")) == boss and clean(hope.get("난이도", "")) == difficulty
+            for hope in hopes
+        )
+        if not matched:
+            continue
+
+        other_info = next(
+            (info for info in character_lookup.values() if info.get("nickname") == other_nickname),
+            None,
+        )
+        if not other_info:
+            continue
+
+        other_hexa = parse_number(other_info.get("hexa", 0))
+        if other_hexa is None:
+            continue
+
+        diff = abs(int(other_hexa) - int(base_hexa))
+        if diff <= tolerance:
+            candidates.append({
+                "nickname": other_nickname,
+                "hexa": int(other_hexa),
+                "diff": diff,
+            })
+
+    candidates.sort(key=lambda x: (x["diff"], -x["hexa"], x["nickname"]))
+    return candidates
+
+
+def format_recommended_party_members(candidates, max_names=3):
+    if not candidates:
+        return ""
+
+    names = [c["nickname"] for c in candidates]
+    visible = names[:max_names]
+    remaining = len(names) - len(visible)
+    if remaining > 0:
+        return "추천 파티원: " + ", ".join(visible) + f" 외 {remaining}명"
+    return "추천 파티원: " + ", ".join(visible)
 
 
 # =========================================================
@@ -2026,10 +2083,28 @@ def build_character_card_image(row):
     hexa_text = format_hexa(row.get("헥사환산", ""))
 
     hopes = boss_hope_lookup.get(nickname, [])
+    base_hexa = parse_number(row.get("헥사환산", ""))
+
+    boss_display_rows = []
+    if hopes:
+        for hope in hopes:
+            difficulty = clean(hope.get("난이도", ""))
+            boss = clean(hope.get("보스", ""))
+            people = int(hope.get("인원", 1))
+            line = f"{difficulty} {boss} · {people}인"
+            candidates = get_recommended_party_members(nickname, boss, difficulty, base_hexa, tolerance=2000)
+            recommendation = format_recommended_party_members(candidates, max_names=3)
+            boss_display_rows.append({
+                "line": line,
+                "recommendation": recommendation,
+            })
 
     width = 860
-    boss_count = max(1, len(hopes))
-    height = 505 + boss_count * 34
+    if boss_display_rows:
+        boss_extra_height = sum(34 + (24 if item["recommendation"] else 0) for item in boss_display_rows)
+    else:
+        boss_extra_height = 34
+    height = 532 + boss_extra_height
 
     image = Image.new("RGBA", (width, height), (7, 13, 22, 255))
     draw = ImageDraw.Draw(image)
@@ -2205,22 +2280,26 @@ def build_character_card_image(row):
 
     boss_y = boss_section_y + 61
 
-    if hopes:
-        for hope in hopes:
-            difficulty = clean(hope.get("난이도", ""))
-            boss = clean(hope.get("보스", ""))
-            people = int(hope.get("인원", 1))
-
-            line = f"{difficulty} {boss} · {people}인"
-
+    if boss_display_rows:
+        for item in boss_display_rows:
             draw.text(
                 (50, boss_y),
-                line,
+                item["line"],
                 font=fonts["boss"],
                 fill=(229, 237, 248, 255),
             )
+            boss_y += 32
 
-            boss_y += 34
+            if item["recommendation"]:
+                draw.text(
+                    (72, boss_y),
+                    item["recommendation"],
+                    font=fonts["small"],
+                    fill=(143, 169, 204, 255),
+                )
+                boss_y += 26
+            else:
+                boss_y += 2
 
     else:
         draw.text(
