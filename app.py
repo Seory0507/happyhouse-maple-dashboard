@@ -2,7 +2,9 @@ import os
 import re
 import base64
 import html
+from datetime import datetime
 from io import BytesIO
+from zoneinfo import ZoneInfo
 from urllib.parse import quote
 
 import pandas as pd
@@ -68,7 +70,10 @@ def get_config(key, default=""):
 SHEET_URL = get_config("SHEET_URL")
 SHEET_NAME = get_config("SHEET_NAME", "캐릭터목록")
 APP_PASSWORD = get_config("APP_PASSWORD")
+ADMIN_PASSWORD = get_config("ADMIN_PASSWORD")
 BOSS_HOPE_SHEET_NAME = "보스희망"
+SPEC_REQUEST_SHEET_NAME = "스펙변경요청"
+SPEC_REQUEST_HEADERS = ["닉네임", "요청일시", "확인여부", "확인일시"]
 
 
 # =========================================================
@@ -302,6 +307,38 @@ def get_boss_hope_worksheet():
     return spreadsheet.worksheet(BOSS_HOPE_SHEET_NAME)
 
 
+def get_spec_request_worksheet():
+    spreadsheet = get_spreadsheet()
+
+    try:
+        worksheet = spreadsheet.worksheet(SPEC_REQUEST_SHEET_NAME)
+    except gspread.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(
+            title=SPEC_REQUEST_SHEET_NAME,
+            rows=200,
+            cols=len(SPEC_REQUEST_HEADERS),
+        )
+        worksheet.append_row(SPEC_REQUEST_HEADERS)
+
+    header = worksheet.row_values(1)
+    if header != SPEC_REQUEST_HEADERS:
+        worksheet.update(
+            range_name=f"A1:D1",
+            values=[SPEC_REQUEST_HEADERS],
+        )
+
+    return worksheet
+
+
+def now_kst_text():
+    return datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def is_spec_request_pending(value):
+    text = clean(value).lower()
+    return text not in {"확인완료", "완료", "확인", "y", "yes", "true", "1"}
+
+
 # =========================================================
 # Google Drive 이미지
 # =========================================================
@@ -396,6 +433,71 @@ def load_boss_hope_data():
             df[col] = ""
 
     return df[required_columns]
+
+
+@st.cache_data(ttl=20)
+def load_spec_request_data():
+    worksheet = get_spec_request_worksheet()
+    records = worksheet.get_all_records()
+
+    if not records:
+        return pd.DataFrame(columns=SPEC_REQUEST_HEADERS)
+
+    request_df = pd.DataFrame(records)
+    for col in SPEC_REQUEST_HEADERS:
+        if col not in request_df.columns:
+            request_df[col] = ""
+
+    return request_df[SPEC_REQUEST_HEADERS]
+
+
+def request_spec_change(nickname):
+    nickname = clean(nickname)
+    if not nickname:
+        return False
+
+    worksheet = get_spec_request_worksheet()
+    records = worksheet.get_all_records()
+
+    for record in records:
+        if clean(record.get("닉네임", "")) == nickname and is_spec_request_pending(
+            record.get("확인여부", "")
+        ):
+            return False
+
+    worksheet.append_row(
+        [nickname, now_kst_text(), "미확인", ""],
+        value_input_option="USER_ENTERED",
+    )
+    load_spec_request_data.clear()
+    return True
+
+
+def confirm_spec_change(nickname):
+    nickname = clean(nickname)
+    if not nickname:
+        return 0
+
+    worksheet = get_spec_request_worksheet()
+    records = worksheet.get_all_records()
+    updated = 0
+    confirmed_at = now_kst_text()
+
+    for row_number, record in enumerate(records, start=2):
+        if clean(record.get("닉네임", "")) != nickname:
+            continue
+        if not is_spec_request_pending(record.get("확인여부", "")):
+            continue
+
+        worksheet.update_cell(row_number, 3, "확인완료")
+        worksheet.update_cell(row_number, 4, confirmed_at)
+        updated += 1
+
+    if updated:
+        load_spec_request_data.clear()
+
+    return updated
+
 
 
 # =========================================================
@@ -800,6 +902,36 @@ st.markdown(
     gap: 6px;
 }
 
+.spec-change-link {
+    display: inline-block;
+    text-decoration: none !important;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: rgba(128, 91, 36, .24);
+    border: 1px solid rgba(219, 164, 75, .42);
+    color: #f4cf8a !important;
+    font-size: .72rem;
+    font-weight: 800;
+}
+
+.spec-change-link:hover {
+    background: rgba(157, 108, 39, .38);
+    color: #fff1cc !important;
+}
+
+.spec-change-pending {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: rgba(107, 82, 36, .14);
+    border: 1px solid rgba(193, 151, 72, .24);
+    color: #bca97e;
+    font-size: .70rem;
+    font-weight: 800;
+    cursor: default;
+    opacity: .82;
+}
+
 .stat-chip-link {
     display: inline-block;
     text-decoration: none !important;
@@ -1041,9 +1173,64 @@ except Exception as e:
     st.code(str(e))
     st.stop()
 
+try:
+    spec_request_df = load_spec_request_data()
+except Exception as e:
+    st.error("스펙변경요청 시트를 불러오지 못했습니다.")
+    st.code(str(e))
+    st.stop()
+
 if df.empty:
     st.warning("등록된 캐릭터가 없습니다.")
     st.stop()
+
+
+# =========================================================
+# 스펙 변경 요청 상태 / 요청 처리
+# =========================================================
+pending_spec_request_nicknames = set()
+pending_spec_request_rows = []
+
+for _, request_row in spec_request_df.iterrows():
+    nickname = clean(request_row.get("닉네임", ""))
+    if nickname and is_spec_request_pending(request_row.get("확인여부", "")):
+        pending_spec_request_nicknames.add(nickname)
+        pending_spec_request_rows.append(
+            {
+                "닉네임": nickname,
+                "요청일시": clean(request_row.get("요청일시", "")),
+            }
+        )
+
+try:
+    spec_request_param = st.query_params.get("spec_request", "")
+except Exception:
+    params = st.experimental_get_query_params()
+    spec_request_param = params.get("spec_request", [""])[0]
+
+if isinstance(spec_request_param, list):
+    spec_request_param = spec_request_param[0] if spec_request_param else ""
+
+spec_request_param = clean(spec_request_param)
+valid_nicknames = set(df.get("닉네임", pd.Series(dtype=str)).fillna("").astype(str).str.strip())
+
+if spec_request_param:
+    if spec_request_param in valid_nicknames:
+        created = request_spec_change(spec_request_param)
+        if created:
+            st.session_state["spec_request_message"] = (
+                f"{spec_request_param}의 스펙 변경 요청을 등록했습니다."
+            )
+        else:
+            st.session_state["spec_request_message"] = (
+                f"{spec_request_param}은(는) 이미 변경 확인 대기 중입니다."
+            )
+
+    try:
+        st.query_params.clear()
+    except Exception:
+        st.experimental_set_query_params()
+    st.rerun()
 
 
 # =========================================================
@@ -1165,6 +1352,23 @@ def build_card(row):
     if image:
         image_html = f'<img class="character-image" src="{image}">'
 
+    spec_change_html = ""
+    if nickname_raw in pending_spec_request_nicknames:
+        spec_change_html = (
+            '<span class="spec-change-pending" title="관리자 확인 대기 중">'
+            '⏳ 변경 확인 필요'
+            '</span>'
+        )
+    else:
+        spec_request_url = f"?spec_request={quote(nickname_raw)}"
+        spec_change_html = (
+            '<a class="spec-change-link" '
+            f'href="{spec_request_url}" target="_self" '
+            'title="스펙이 바뀌었으면 눌러주세요">'
+            '🔄 스펙변경'
+            '</a>'
+        )
+
     stat_url = get_stat_url(row)
     stat_link_html = ""
 
@@ -1210,6 +1414,7 @@ def build_card(row):
         '</div>',
 
         '<div class="right-meta">',
+        spec_change_html,
         stat_link_html,
         server_html,
         '</div>',
@@ -2237,6 +2442,45 @@ if st.session_state.get("boss_hope_saved_message"):
 
 
 # =========================================================
+# 스펙 변경 관리자
+# =========================================================
+if "spec_admin_ok" not in st.session_state:
+    st.session_state["spec_admin_ok"] = False
+
+with st.sidebar.expander("🔐 스펙 변경 관리자", expanded=False):
+    if st.session_state["spec_admin_ok"]:
+        st.success("관리자 모드")
+        st.caption(f"미확인 요청 {len(pending_spec_request_nicknames)}건")
+        if st.button("관리자 모드 종료", key="spec_admin_logout", use_container_width=True):
+            st.session_state["spec_admin_ok"] = False
+            st.rerun()
+    elif ADMIN_PASSWORD:
+        admin_password_input = st.text_input(
+            "관리자 비밀번호",
+            type="password",
+            key="spec_admin_password_input",
+            placeholder="관리자 비밀번호",
+            label_visibility="collapsed",
+        )
+        if st.button("관리자 로그인", key="spec_admin_login", use_container_width=True):
+            if admin_password_input == ADMIN_PASSWORD:
+                st.session_state["spec_admin_ok"] = True
+                st.rerun()
+            else:
+                st.error("관리자 비밀번호가 틀렸습니다.")
+    else:
+        st.caption("Secrets에 ADMIN_PASSWORD를 설정하면 관리자 확인 기능을 사용할 수 있습니다.")
+
+if st.session_state.get("spec_request_message"):
+    st.success(st.session_state["spec_request_message"] )
+    del st.session_state["spec_request_message"]
+
+if st.session_state.get("spec_confirm_message"):
+    st.success(st.session_state["spec_confirm_message"] )
+    del st.session_state["spec_confirm_message"]
+
+
+# =========================================================
 # 메뉴
 # =========================================================
 page = st.radio(
@@ -2252,6 +2496,34 @@ page = st.radio(
 # 캐릭터 목록
 # =========================================================
 if page == "👥 캐릭터 목록":
+    if st.session_state.get("spec_admin_ok") and pending_spec_request_rows:
+        with st.expander(
+            f"🔔 스펙 변경 확인 필요 {len(pending_spec_request_rows)}건",
+            expanded=True,
+        ):
+            for request_index, request_data in enumerate(pending_spec_request_rows):
+                request_nickname = request_data["닉네임"]
+                requested_at = request_data["요청일시"]
+                info_col, action_col = st.columns([3, 1])
+
+                with info_col:
+                    st.markdown(f"**{request_nickname}**")
+                    if requested_at:
+                        st.caption(f"요청: {requested_at}")
+
+                with action_col:
+                    if st.button(
+                        "✅ 확인 완료",
+                        key=f"confirm_spec_{request_index}_{request_nickname}",
+                        use_container_width=True,
+                    ):
+                        updated_count = confirm_spec_change(request_nickname)
+                        if updated_count:
+                            st.session_state["spec_confirm_message"] = (
+                                f"{request_nickname}의 스펙 변경 확인을 완료했습니다."
+                            )
+                        st.rerun()
+
     server_values = []
 
     if "서버" in df.columns:
