@@ -603,19 +603,43 @@ def read_maplescouter_page_spec(nickname):
                                 break
 
             # 캐릭터 외형 이미지 후보
-            image_urls = page.locator("img").evaluate_all(
-                "els => els.map(e => e.currentSrc || e.src || '').filter(Boolean)"
+            # 펫/아이템 이미지를 잘못 고르지 않도록 Nexon 캐릭터 look 경로만 허용한다.
+            image_candidates = page.locator('img[src*="/static/maplestory/character/look/"]').evaluate_all(
+                """els => els.map((e, idx) => {
+                    const r = e.getBoundingClientRect();
+                    const style = window.getComputedStyle(e);
+                    return {
+                        index: idx,
+                        src: e.currentSrc || e.src || '',
+                        alt: e.alt || '',
+                        width: Math.round(r.width),
+                        height: Math.round(r.height),
+                        area: Math.round(r.width * r.height),
+                        visible: !!(r.width && r.height) && style.display !== 'none' && style.visibility !== 'hidden',
+                        top: Math.round(r.top),
+                        left: Math.round(r.left)
+                    };
+                }).filter(x => x.src)"""
             )
-            image_url = ""
-            for url in image_urls:
-                if "open.api.nexon.com/static/maplestory/character/look" in url:
-                    image_url = url
-                    break
-            if not image_url:
-                for url in image_urls:
-                    if "open.api.nexon.com" in url and "maplestory" in url:
-                        image_url = url
-                        break
+
+            # 화면에 실제로 보이는 이미지 중 면적이 큰 것을 우선한다.
+            # 같은 캐릭터 이미지가 여러 UI 영역에 중복 렌더링될 수 있어 URL도 중복 제거한다.
+            deduped_candidates = []
+            seen_image_urls = set()
+            for candidate in image_candidates:
+                url = candidate.get("src", "")
+                if not url or url in seen_image_urls:
+                    continue
+                seen_image_urls.add(url)
+                deduped_candidates.append(candidate)
+
+            visible_candidates = [c for c in deduped_candidates if c.get("visible")]
+            ranked_candidates = sorted(
+                visible_candidates or deduped_candidates,
+                key=lambda c: (c.get("area", 0), c.get("height", 0), c.get("width", 0)),
+                reverse=True,
+            )
+            image_url = ranked_candidates[0].get("src", "") if ranked_candidates else ""
 
             normalized = re.sub(r"\n{3,}", "\n\n", body_text).strip()
             excerpt = normalized[:3500]
@@ -632,7 +656,7 @@ def read_maplescouter_page_spec(nickname):
                 "level_contexts": level_contexts[:5],
                 "combat_contexts": combat_contexts[:8],
                 "hexa_contexts": hexa_contexts[:8],
-                "image_candidates": image_urls[:20],
+                "image_candidates": ranked_candidates[:20],
                 "body_length": len(body_text),
                 "html_length": len(html_text),
                 "excerpt": excerpt,
@@ -2858,6 +2882,18 @@ if st.session_state["show_page_settings"]:
                             st.code(result['image_url'], language=None)
                     else:
                         st.warning("캐릭터 코디 이미지 URL을 아직 찾지 못했습니다.")
+
+                    with st.expander("🖼️ 캐릭터 외형 이미지 후보 보기"):
+                        candidates = result.get("image_candidates") or []
+                        if not candidates:
+                            st.write("`/static/maplestory/character/look/` 경로의 이미지가 없습니다.")
+                        for idx, candidate in enumerate(candidates[:10], start=1):
+                            st.write(
+                                f"**후보 {idx}** · {candidate.get('width', 0)}×{candidate.get('height', 0)} "
+                                f"· visible={candidate.get('visible', False)} · alt={candidate.get('alt') or '(없음)'}"
+                            )
+                            st.image(candidate.get("src", ""), width=140)
+                            st.code(candidate.get("src", ""), language=None)
 
                     st.caption(
                         f"본문 {result['body_length']:,}자 · HTML {result['html_length']:,}자 · "
