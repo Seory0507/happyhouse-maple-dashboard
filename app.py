@@ -504,7 +504,30 @@ def _extract_value_near_labels(lines, labels, max_after=4):
         parts.extend(chunk[1:])
 
         for part in parts:
-            for token in re.findall(r"(?:Lv\.?\s*)?[\d,.]+(?:억|천만|백만|십만|만|천|백)?", part):
+            # 먼저 '1억 9709만 4484'처럼 여러 단위가 이어진 숫자를 한 덩어리로 잡는다.
+            compound_pattern = (
+                r"(?:[\d,.]+(?:억|천만|백만|십만|만|천|백)\s*)+"
+                r"(?:[\d,]+)?"
+            )
+            compound_matches = list(re.finditer(compound_pattern, part))
+            consumed_spans = []
+
+            for match in compound_matches:
+                token = match.group(0).strip()
+                cleaned = re.sub(r"\s+", "", token)
+                number = _parse_korean_number_text(cleaned)
+                if number is not None:
+                    candidates.append((number, cleaned, part))
+                    consumed_spans.append(match.span())
+
+            # 복합 숫자에 포함되지 않은 단순 숫자도 기존처럼 후보에 추가한다.
+            masked = list(part)
+            for start, end in consumed_spans:
+                for pos in range(start, end):
+                    masked[pos] = " "
+            remaining_part = "".join(masked)
+
+            for token in re.findall(r"(?:Lv\.?\s*)?[\d,.]+(?:억|천만|백만|십만|만|천|백)?", remaining_part):
                 cleaned = token.replace("Lv.", "").replace("Lv", "").strip()
                 number = _parse_korean_number_text(cleaned)
                 if number is not None:
