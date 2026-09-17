@@ -245,6 +245,32 @@ def get_character_local_image(nickname):
     return ""
 
 
+def is_nexon_character_look_url(url):
+    url = clean(url)
+    return "/static/maplestory/character/look/" in url
+
+
+def trim_transparent_edges(image, padding=6):
+    if image is None:
+        return None
+
+    try:
+        rgba = image.convert("RGBA")
+        alpha = rgba.getchannel("A")
+        bbox = alpha.getbbox()
+        if not bbox:
+            return rgba
+
+        left, upper, right, lower = bbox
+        left = max(0, left - padding)
+        upper = max(0, upper - padding)
+        right = min(rgba.size[0], right + padding)
+        lower = min(rgba.size[1], lower + padding)
+        return rgba.crop((left, upper, right, lower))
+    except Exception:
+        return image
+
+
 # =========================================================
 # 비밀번호
 # =========================================================
