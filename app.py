@@ -75,19 +75,19 @@ SHEET_NAME = get_config("SHEET_NAME", "캐릭터목록")
 APP_PASSWORD = get_config("APP_PASSWORD")
 ADMIN_PASSWORD = get_config("ADMIN_PASSWORD")
 BOSS_HOPE_SHEET_NAME = "보스희망"
-SPEC_REQUEST_SHEET_NAME = "스펙변경요청"
-SPEC_REQUEST_HEADERS = ["닉네임", "요청일시", "확인여부", "확인일시"]
+MAPLESCOUTER_API_URL = "https://api.maplescouter.com/api/id"
 
 
 # =========================================================
-# 스펙변경 링크용 단기 인증
-# 카드 안의 HTML 링크는 페이지를 새로 여는 방식이라 session_state가 새로 생길 수 있다.
-# 그래서 이미 로그인한 화면에서만 생성되는, 캐릭터/시간에 묶인 짧은 서명을 함께 보낸다.
+# 스펙 업데이트 링크용 단기 인증
+# 카드 안의 버튼은 HTML 링크이므로 클릭 시 페이지가 새로 열릴 수 있다.
+# 이미 앱 비밀번호를 통과한 화면에서만 생성되는 짧은 서명을 함께 보내
+# 스펙 업데이트를 눌러도 초기 로그인 화면으로 돌아가지 않게 한다.
 # =========================================================
-def make_spec_request_signature(nickname, timestamp):
+def make_spec_update_signature(nickname, timestamp):
     if not APP_PASSWORD:
         return ""
-    message = f"spec_request|{nickname}|{timestamp}".encode("utf-8")
+    message = f"spec_update|{nickname}|{timestamp}".encode("utf-8")
     return hmac.new(
         APP_PASSWORD.encode("utf-8"),
         message,
@@ -108,8 +108,8 @@ def get_query_param(name, default=""):
     return clean(value) if "clean" in globals() else str(value).strip()
 
 
-def has_valid_spec_request_signature():
-    nickname = get_query_param("spec_request", "")
+def has_valid_spec_update_signature():
+    nickname = get_query_param("spec_update", "")
     timestamp_text = get_query_param("spec_ts", "")
     signature = get_query_param("spec_sig", "")
 
@@ -121,12 +121,12 @@ def has_valid_spec_request_signature():
     except Exception:
         return False
 
-    # 링크가 외부에 남아 있어도 오래 재사용되지 않게 10분만 유효하게 한다.
+    # 링크는 10분 동안만 유효
     if abs(int(time.time()) - timestamp) > 600:
         return False
 
-    expected = make_spec_request_signature(nickname, timestamp)
-    return hmac.compare_digest(signature, expected)
+    expected = make_spec_update_signature(nickname, timestamp)
+    return hmac.compare_digest(expected, signature)
 
 
 # =========================================================
@@ -306,9 +306,9 @@ def check_password():
     return False
 
 
-# 스펙변경 HTML 링크를 눌러 새 세션으로 들어온 경우에도
+# 스펙 업데이트 HTML 링크를 눌러 새 세션으로 들어온 경우에도
 # 유효한 단기 서명이 있으면 기존 로그인 흐름을 이어준다.
-if has_valid_spec_request_signature():
+if has_valid_spec_update_signature():
     st.session_state.password_ok = True
 
 if not check_password():
@@ -365,36 +365,146 @@ def get_boss_hope_worksheet():
     return spreadsheet.worksheet(BOSS_HOPE_SHEET_NAME)
 
 
-def get_spec_request_worksheet():
+def get_character_worksheet():
     spreadsheet = get_spreadsheet()
-
-    try:
-        worksheet = spreadsheet.worksheet(SPEC_REQUEST_SHEET_NAME)
-    except gspread.WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(
-            title=SPEC_REQUEST_SHEET_NAME,
-            rows=200,
-            cols=len(SPEC_REQUEST_HEADERS),
-        )
-        worksheet.append_row(SPEC_REQUEST_HEADERS)
-
-    header = worksheet.row_values(1)
-    if header != SPEC_REQUEST_HEADERS:
-        worksheet.update(
-            range_name=f"A1:D1",
-            values=[SPEC_REQUEST_HEADERS],
-        )
-
-    return worksheet
+    return spreadsheet.worksheet(SHEET_NAME)
 
 
 def now_kst_text():
     return datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def is_spec_request_pending(value):
-    text = clean(value).lower()
-    return text not in {"확인완료", "완료", "확인", "y", "yes", "true", "1"}
+def _find_maplescouter_champion_record(data, nickname):
+    """MapleScouter 응답 안에서 해당 닉네임의 champion 레코드를 재귀적으로 찾는다."""
+    if isinstance(data, dict):
+        if clean(data.get("champion_name", "")) == nickname and any(
+            key in data
+            for key in ("champion_hexa_stat", "champion_combat_power", "champion_level")
+        ):
+            return data
+
+        for value in data.values():
+            found = _find_maplescouter_champion_record(value, nickname)
+            if found is not None:
+                return found
+
+    elif isinstance(data, list):
+        for value in data:
+            found = _find_maplescouter_champion_record(value, nickname)
+            if found is not None:
+                return found
+
+    return None
+
+
+def fetch_maplescouter_spec(nickname):
+    nickname = clean(nickname)
+    if not nickname:
+        raise ValueError("닉네임이 비어 있습니다.")
+
+    response = requests.get(
+        MAPLESCOUTER_API_URL,
+        params={
+            "name": nickname,
+            "preset": "00000",
+            "region": "kms",
+        },
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://maplescouter.com/",
+        },
+        timeout=20,
+    )
+    response.raise_for_status()
+
+    try:
+        data = response.json()
+    except Exception as e:
+        raise RuntimeError("MapleScouter 응답을 JSON으로 읽지 못했습니다.") from e
+
+    record = _find_maplescouter_champion_record(data, nickname)
+    if record is None:
+        raise RuntimeError("MapleScouter 응답에서 캐릭터 스펙을 찾지 못했습니다.")
+
+    level = parse_number(record.get("champion_level"))
+    combat = parse_number(record.get("champion_combat_power"))
+    hexa = parse_number(record.get("champion_hexa_stat"))
+
+    if level is None or combat is None or hexa is None:
+        raise RuntimeError("MapleScouter 응답에 레벨/전투력/헥사환산 값이 없습니다.")
+
+    return {
+        "level": int(level),
+        "combat": int(combat),
+        "hexa": int(hexa),
+    }
+
+
+def competition_ranks(values_by_row):
+    """원본 헥사환산 기준 공동순위: 1, 2, 2, 4 방식."""
+    numeric_values = [value for value in values_by_row.values() if value is not None]
+    return {
+        row_number: (
+            None
+            if value is None
+            else 1 + sum(1 for other in numeric_values if other > value)
+        )
+        for row_number, value in values_by_row.items()
+    }
+
+
+def apply_character_spec_update(nickname, latest_spec):
+    """캐릭터 스펙 3종을 반영하고 헥사환산 원본값으로 전체 순위를 다시 계산한다."""
+    worksheet = get_character_worksheet()
+    values = worksheet.get_all_values()
+
+    if not values:
+        raise RuntimeError("캐릭터목록 시트가 비어 있습니다.")
+
+    headers = [clean(v) for v in values[0]]
+    required = ["닉네임", "레벨", "전투력", "헥사환산", "순위"]
+    missing = [col for col in required if col not in headers]
+    if missing:
+        raise RuntimeError("캐릭터목록 시트에 필요한 열이 없습니다: " + ", ".join(missing))
+
+    col_index = {name: headers.index(name) + 1 for name in required}
+    target_row = None
+
+    for row_number, row_values in enumerate(values[1:], start=2):
+        nick_idx = col_index["닉네임"] - 1
+        row_nickname = clean(row_values[nick_idx]) if nick_idx < len(row_values) else ""
+        if row_nickname == nickname:
+            target_row = row_number
+            break
+
+    if target_row is None:
+        raise RuntimeError(f"캐릭터목록 시트에서 {nickname}을(를) 찾지 못했습니다.")
+
+    # 레벨 / 전투력 / 헥사환산 원본값 반영
+    worksheet.update_cell(target_row, col_index["레벨"], int(latest_spec["level"]))
+    worksheet.update_cell(target_row, col_index["전투력"], int(latest_spec["combat"]))
+    worksheet.update_cell(target_row, col_index["헥사환산"], int(latest_spec["hexa"]))
+
+    # 방금 반영한 값을 포함해 전체 헥사환산으로 공동순위 재계산
+    values = worksheet.get_all_values()
+    hexa_idx = col_index["헥사환산"] - 1
+    nickname_idx = col_index["닉네임"] - 1
+    hexa_by_row = {}
+
+    for row_number, row_values in enumerate(values[1:], start=2):
+        row_nickname = clean(row_values[nickname_idx]) if nickname_idx < len(row_values) else ""
+        if not row_nickname:
+            continue
+        raw_hexa = row_values[hexa_idx] if hexa_idx < len(row_values) else ""
+        hexa_by_row[row_number] = parse_number(raw_hexa)
+
+    ranks = competition_ranks(hexa_by_row)
+    rank_col = col_index["순위"]
+    for row_number, rank_value in ranks.items():
+        worksheet.update_cell(row_number, rank_col, "" if rank_value is None else int(rank_value))
+
+    load_character_data.clear()
 
 
 # =========================================================
@@ -491,71 +601,6 @@ def load_boss_hope_data():
             df[col] = ""
 
     return df[required_columns]
-
-
-@st.cache_data(ttl=20)
-def load_spec_request_data():
-    worksheet = get_spec_request_worksheet()
-    records = worksheet.get_all_records()
-
-    if not records:
-        return pd.DataFrame(columns=SPEC_REQUEST_HEADERS)
-
-    request_df = pd.DataFrame(records)
-    for col in SPEC_REQUEST_HEADERS:
-        if col not in request_df.columns:
-            request_df[col] = ""
-
-    return request_df[SPEC_REQUEST_HEADERS]
-
-
-def request_spec_change(nickname):
-    nickname = clean(nickname)
-    if not nickname:
-        return False
-
-    worksheet = get_spec_request_worksheet()
-    records = worksheet.get_all_records()
-
-    for record in records:
-        if clean(record.get("닉네임", "")) == nickname and is_spec_request_pending(
-            record.get("확인여부", "")
-        ):
-            return False
-
-    worksheet.append_row(
-        [nickname, now_kst_text(), "미확인", ""],
-        value_input_option="USER_ENTERED",
-    )
-    load_spec_request_data.clear()
-    return True
-
-
-def confirm_spec_change(nickname):
-    nickname = clean(nickname)
-    if not nickname:
-        return 0
-
-    worksheet = get_spec_request_worksheet()
-    records = worksheet.get_all_records()
-    updated = 0
-    confirmed_at = now_kst_text()
-
-    for row_number, record in enumerate(records, start=2):
-        if clean(record.get("닉네임", "")) != nickname:
-            continue
-        if not is_spec_request_pending(record.get("확인여부", "")):
-            continue
-
-        worksheet.update_cell(row_number, 3, "확인완료")
-        worksheet.update_cell(row_number, 4, confirmed_at)
-        updated += 1
-
-    if updated:
-        load_spec_request_data.clear()
-
-    return updated
-
 
 
 # =========================================================
@@ -962,6 +1007,7 @@ st.markdown(
 
 .spec-change-link {
     display: inline-block;
+    white-space: nowrap;
     text-decoration: none !important;
     padding: 4px 8px;
     border-radius: 8px;
@@ -1231,58 +1277,50 @@ except Exception as e:
     st.code(str(e))
     st.stop()
 
-try:
-    spec_request_df = load_spec_request_data()
-except Exception as e:
-    st.error("스펙변경요청 시트를 불러오지 못했습니다.")
-    st.code(str(e))
-    st.stop()
-
 if df.empty:
     st.warning("등록된 캐릭터가 없습니다.")
     st.stop()
 
 
 # =========================================================
-# 스펙 변경 요청 상태 / 요청 처리
+# 스펙 업데이트 조회 처리
 # =========================================================
-pending_spec_request_nicknames = set()
-pending_spec_request_rows = []
+if "spec_update_preview" not in st.session_state:
+    st.session_state["spec_update_preview"] = None
 
-for _, request_row in spec_request_df.iterrows():
-    nickname = clean(request_row.get("닉네임", ""))
-    if nickname and is_spec_request_pending(request_row.get("확인여부", "")):
-        pending_spec_request_nicknames.add(nickname)
-        pending_spec_request_rows.append(
-            {
-                "닉네임": nickname,
-                "요청일시": clean(request_row.get("요청일시", "")),
-            }
-        )
+if "spec_update_error" not in st.session_state:
+    st.session_state["spec_update_error"] = None
 
-try:
-    spec_request_param = st.query_params.get("spec_request", "")
-except Exception:
-    params = st.experimental_get_query_params()
-    spec_request_param = params.get("spec_request", [""])[0]
-
-if isinstance(spec_request_param, list):
-    spec_request_param = spec_request_param[0] if spec_request_param else ""
-
-spec_request_param = clean(spec_request_param)
+spec_update_param = get_query_param("spec_update", "")
 valid_nicknames = set(df.get("닉네임", pd.Series(dtype=str)).fillna("").astype(str).str.strip())
 
-if spec_request_param:
-    if spec_request_param in valid_nicknames:
-        created = request_spec_change(spec_request_param)
-        if created:
-            st.session_state["spec_request_message"] = (
-                f"{spec_request_param}의 스펙 변경 요청을 등록했습니다."
-            )
-        else:
-            st.session_state["spec_request_message"] = (
-                f"{spec_request_param}은(는) 이미 변경 확인 대기 중입니다."
-            )
+if spec_update_param:
+    if spec_update_param in valid_nicknames:
+        try:
+            current_match = df[
+                df["닉네임"].fillna("").astype(str).str.strip() == spec_update_param
+            ]
+            current_row = current_match.iloc[0]
+            latest_spec = fetch_maplescouter_spec(spec_update_param)
+
+            current_spec = {
+                "level": int(parse_number(current_row.get("레벨", "")) or 0),
+                "combat": int(parse_number(current_row.get("전투력", "")) or 0),
+                "hexa": int(parse_number(current_row.get("헥사환산", "")) or 0),
+            }
+
+            st.session_state["spec_update_preview"] = {
+                "nickname": spec_update_param,
+                "current": current_spec,
+                "latest": latest_spec,
+            }
+            st.session_state["spec_update_error"] = None
+        except Exception as e:
+            st.session_state["spec_update_preview"] = None
+            st.session_state["spec_update_error"] = {
+                "nickname": spec_update_param,
+                "message": str(e),
+            }
 
     try:
         st.query_params.clear()
@@ -1410,28 +1448,20 @@ def build_card(row):
     if image:
         image_html = f'<img class="character-image" src="{image}">'
 
-    spec_change_html = ""
-    if nickname_raw in pending_spec_request_nicknames:
-        spec_change_html = (
-            '<span class="spec-change-pending" title="관리자 확인 대기 중">'
-            '⏳ 변경 확인 필요'
-            '</span>'
-        )
-    else:
-        spec_ts = int(time.time())
-        spec_sig = make_spec_request_signature(nickname_raw, spec_ts)
-        spec_request_url = (
-            f"?spec_request={quote(nickname_raw)}"
-            f"&spec_ts={spec_ts}"
-            f"&spec_sig={spec_sig}"
-        )
-        spec_change_html = (
-            '<a class="spec-change-link" '
-            f'href="{spec_request_url}" target="_self" '
-            'title="스펙이 바뀌었으면 눌러주세요">'
-            '🔄 스펙변경'
-            '</a>'
-        )
+    spec_ts = int(time.time())
+    spec_sig = make_spec_update_signature(nickname_raw, spec_ts)
+    spec_update_url = (
+        f"?spec_update={quote(nickname_raw)}"
+        f"&spec_ts={spec_ts}"
+        f"&spec_sig={spec_sig}"
+    )
+    spec_change_html = (
+        '<a class="spec-change-link" '
+        f'href="{spec_update_url}" target="_self" '
+        'title="MapleScouter에서 최신 레벨·전투력·헥사환산을 조회합니다">'
+        '🔄 스펙 업데이트'
+        '</a>'
+    )
 
     stat_url = get_stat_url(row)
     stat_link_html = ""
@@ -2506,88 +2536,69 @@ if st.session_state.get("boss_hope_saved_message"):
 
 
 # =========================================================
-# 스펙 변경 관리자
+# 사이드바 메뉴 / 페이지 설정
 # =========================================================
-if "spec_admin_ok" not in st.session_state:
-    st.session_state["spec_admin_ok"] = False
+if "main_page" not in st.session_state:
+    st.session_state["main_page"] = "👥 캐릭터 목록"
 
-with st.sidebar.expander("🔐 스펙 변경 관리자", expanded=False):
-    if st.session_state["spec_admin_ok"]:
-        st.success("관리자 모드")
-        st.caption(f"미확인 요청 {len(pending_spec_request_nicknames)}건")
-        if st.button("관리자 모드 종료", key="spec_admin_logout", use_container_width=True):
-            st.session_state["spec_admin_ok"] = False
+st.sidebar.markdown("### 메뉴")
+
+character_menu_label = "👥 캐릭터 목록"
+party_menu_label = "⚔️ 보스 파티 만들기"
+
+if st.session_state["main_page"] == character_menu_label:
+    character_menu_label += "  ✓"
+else:
+    party_menu_label += "  ✓"
+
+if st.sidebar.button(character_menu_label, key="sidebar_character_page", use_container_width=True):
+    st.session_state["main_page"] = "👥 캐릭터 목록"
+
+if st.sidebar.button(party_menu_label, key="sidebar_party_page", use_container_width=True):
+    st.session_state["main_page"] = "⚔️ 보스 파티 만들기"
+
+if "page_admin_ok" not in st.session_state:
+    st.session_state["page_admin_ok"] = False
+
+settings_label = "⚙️ 페이지 설정"
+if st.session_state["page_admin_ok"]:
+    settings_label += " · 관리자 모드"
+
+with st.sidebar.expander(settings_label, expanded=False):
+    if st.session_state["page_admin_ok"]:
+        st.success("관리자 로그인됨")
+        st.caption("앞으로 관리자 전용 기능은 이곳에 추가됩니다.")
+        if st.button("관리자 로그아웃", key="page_admin_logout", use_container_width=True):
+            st.session_state["page_admin_ok"] = False
             st.rerun()
     elif ADMIN_PASSWORD:
         admin_password_input = st.text_input(
             "관리자 비밀번호",
             type="password",
-            key="spec_admin_password_input",
+            key="page_admin_password_input",
             placeholder="관리자 비밀번호",
             label_visibility="collapsed",
         )
-        if st.button("관리자 로그인", key="spec_admin_login", use_container_width=True):
+        if st.button("관리자 로그인", key="page_admin_login", use_container_width=True):
             if admin_password_input == ADMIN_PASSWORD:
-                st.session_state["spec_admin_ok"] = True
+                st.session_state["page_admin_ok"] = True
                 st.rerun()
             else:
                 st.error("관리자 비밀번호가 틀렸습니다.")
     else:
-        st.caption("Secrets에 ADMIN_PASSWORD를 설정하면 관리자 확인 기능을 사용할 수 있습니다.")
+        st.caption("Secrets에 ADMIN_PASSWORD를 설정하면 관리자 모드를 사용할 수 있습니다.")
 
-if st.session_state.get("spec_request_message"):
-    st.success(st.session_state["spec_request_message"] )
-    del st.session_state["spec_request_message"]
+if st.session_state.get("spec_update_message"):
+    st.success(st.session_state["spec_update_message"])
+    del st.session_state["spec_update_message"]
 
-if st.session_state.get("spec_confirm_message"):
-    st.success(st.session_state["spec_confirm_message"] )
-    del st.session_state["spec_confirm_message"]
-
-
-# =========================================================
-# 메뉴
-# =========================================================
-page = st.radio(
-    "메뉴",
-    ["👥 캐릭터 목록", "⚔️ 보스 파티 만들기"],
-    horizontal=True,
-    label_visibility="collapsed",
-    key="main_page",
-)
+page = st.session_state["main_page"]
 
 
 # =========================================================
 # 캐릭터 목록
 # =========================================================
 if page == "👥 캐릭터 목록":
-    if st.session_state.get("spec_admin_ok") and pending_spec_request_rows:
-        with st.expander(
-            f"🔔 스펙 변경 확인 필요 {len(pending_spec_request_rows)}건",
-            expanded=True,
-        ):
-            for request_index, request_data in enumerate(pending_spec_request_rows):
-                request_nickname = request_data["닉네임"]
-                requested_at = request_data["요청일시"]
-                info_col, action_col = st.columns([3, 1])
-
-                with info_col:
-                    st.markdown(f"**{request_nickname}**")
-                    if requested_at:
-                        st.caption(f"요청: {requested_at}")
-
-                with action_col:
-                    if st.button(
-                        "✅ 확인 완료",
-                        key=f"confirm_spec_{request_index}_{request_nickname}",
-                        use_container_width=True,
-                    ):
-                        updated_count = confirm_spec_change(request_nickname)
-                        if updated_count:
-                            st.session_state["spec_confirm_message"] = (
-                                f"{request_nickname}의 스펙 변경 확인을 완료했습니다."
-                            )
-                        st.rerun()
-
     server_values = []
 
     if "서버" in df.columns:
@@ -2641,6 +2652,104 @@ if page == "👥 캐릭터 목록":
                 nickname = clean(row.get("닉네임", ""))
 
                 st.markdown(build_card(row), unsafe_allow_html=True)
+
+                preview = st.session_state.get("spec_update_preview")
+                update_error = st.session_state.get("spec_update_error")
+
+                if update_error and update_error.get("nickname") == nickname:
+                    st.error("스펙 조회에 실패했습니다: " + update_error.get("message", "알 수 없는 오류"))
+                    if st.button(
+                        "닫기",
+                        key=f"close_spec_error_{cid}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["spec_update_error"] = None
+                        st.rerun()
+
+                if preview and preview.get("nickname") == nickname:
+                    current_spec = preview["current"]
+                    latest_spec = preview["latest"]
+                    has_changes = any(
+                        current_spec[key] != latest_spec[key]
+                        for key in ("level", "combat", "hexa")
+                    )
+
+                    with st.container(border=True):
+                        st.markdown(f"**🔄 {nickname} 스펙 업데이트**")
+
+                        h1, h2, h3 = st.columns([1.25, 1, 1])
+                        with h1:
+                            st.caption("항목")
+                        with h2:
+                            st.caption("현재")
+                        with h3:
+                            st.caption("최신")
+
+                        r1, r2, r3 = st.columns([1.25, 1, 1])
+                        with r1:
+                            st.write("레벨")
+                        with r2:
+                            st.write(f"Lv. {current_spec['level']}")
+                        with r3:
+                            st.write(f"Lv. {latest_spec['level']}")
+
+                        r1, r2, r3 = st.columns([1.25, 1, 1])
+                        with r1:
+                            st.write("전투력")
+                        with r2:
+                            st.write(format_combat_power(current_spec["combat"]))
+                        with r3:
+                            st.write(format_combat_power(latest_spec["combat"]))
+
+                        r1, r2, r3 = st.columns([1.25, 1, 1])
+                        with r1:
+                            st.write("헥사환산")
+                        with r2:
+                            st.write(
+                                f"{current_spec['hexa']:,}  ({format_hexa(current_spec['hexa'])})"
+                            )
+                        with r3:
+                            st.write(
+                                f"{latest_spec['hexa']:,}  ({format_hexa(latest_spec['hexa'])})"
+                            )
+
+                        if not has_changes:
+                            st.success("✅ 이미 최신 스펙입니다.")
+                            if st.button(
+                                "확인",
+                                key=f"close_spec_preview_{cid}",
+                                use_container_width=True,
+                            ):
+                                st.session_state["spec_update_preview"] = None
+                                st.rerun()
+                        else:
+                            cancel_col, apply_col = st.columns(2)
+                            with cancel_col:
+                                if st.button(
+                                    "취소",
+                                    key=f"cancel_spec_update_{cid}",
+                                    use_container_width=True,
+                                ):
+                                    st.session_state["spec_update_preview"] = None
+                                    st.rerun()
+
+                            with apply_col:
+                                if st.button(
+                                    "✅ 업데이트 적용",
+                                    key=f"apply_spec_update_{cid}",
+                                    type="primary",
+                                    use_container_width=True,
+                                ):
+                                    try:
+                                        apply_character_spec_update(nickname, latest_spec)
+                                        st.session_state["spec_update_preview"] = None
+                                        st.session_state["spec_update_message"] = (
+                                            f"{nickname}의 레벨·전투력·헥사환산과 전체 순위를 업데이트했습니다."
+                                        )
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error("스펙 업데이트에 실패했습니다.")
+                                        st.code(str(e))
 
                 button_col1, button_col2 = st.columns(2)
 
