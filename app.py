@@ -19,6 +19,11 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 from google.oauth2.service_account import Credentials
 
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    sync_playwright = None
+
 
 # =========================================================
 # 기본 설정
@@ -71,12 +76,11 @@ def get_config(key, default=""):
 
 
 SHEET_URL = get_config("SHEET_URL")
-SHEET_NAME = get_config("SHEET_NAME", "캐릭터목록")
+SHEET_NAME = get_config("SHEET_NAME", "캐릭터 목록")
 APP_PASSWORD = get_config("APP_PASSWORD")
 ADMIN_PASSWORD = get_config("ADMIN_PASSWORD")
 BOSS_HOPE_SHEET_NAME = "보스희망"
-MAPLESCOUTER_API_URL = "https://api.maplescouter.com/api/id"
-MAPLESCOUTER_API_KEY = get_config("MAPLESCOUTER_API_KEY")
+MAPLESCOUTER_PAGE_URL = "https://maplescouter.com/ko/info"
 
 
 # =========================================================
@@ -398,138 +402,108 @@ def _find_maplescouter_champion_record(data, nickname):
     return None
 
 
-def fetch_maplescouter_spec(nickname):
+def _find_chromium_executable():
+    """Streamlit Cloud packages.txt로 설치한 Chromium 경로를 찾는다."""
+    candidates = [
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def read_maplescouter_page_test(nickname):
+    """실제 MapleScouter 페이지를 headless Chromium으로 열어 렌더링 여부만 확인한다.
+
+    이 테스트는 MapleScouter API 엔드포인트나 api-key를 직접 사용하지 않는다.
+    아직 스펙 값을 파싱/저장하지 않고, Cloud에서 페이지 렌더링이 가능한지만 확인한다.
+    """
     nickname = clean(nickname)
     if not nickname:
-        raise ValueError("닉네임이 비어 있습니다.")
+        raise ValueError("닉네임을 입력해주세요.")
 
-    if not MAPLESCOUTER_API_KEY:
+    if sync_playwright is None:
         raise RuntimeError(
-            "MAPLESCOUTER_API_KEY가 설정되어 있지 않습니다. "
-            "Streamlit Secrets 또는 .env에 키를 추가해주세요."
+            "playwright 패키지를 불러오지 못했습니다. requirements.txt를 확인해주세요."
         )
 
-    response = requests.get(
-        MAPLESCOUTER_API_URL,
-        params={
-            "name": nickname,
-            "preset": "00000",
-            "region": "kms",
-        },
-        headers={
-            "accept": "*/*",
-            "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-            "api-key": MAPLESCOUTER_API_KEY,
-            "cache-control": "public, max-age=300",
-            "content-type": "application/json",
-            "origin": "https://maplescouter.com",
-            "referer": "https://maplescouter.com/",
-            "user-agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/152.0.0.0 Safari/537.36"
-            ),
-        },
-        timeout=20,
+    page_url = f"{MAPLESCOUTER_PAGE_URL}?name={quote(nickname)}&preset=00000"
+    chromium_path = _find_chromium_executable()
+
+    with sync_playwright() as p:
+        launch_kwargs = {
+            "headless": True,
+            "args": [
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ],
+        }
+        if chromium_path:
+            launch_kwargs["executable_path"] = chromium_path
+
+        try:
+            browser = p.chromium.launch(**launch_kwargs)
+        except Exception as e:
+            extra = (
+                f" 감지된 Chromium 경로: {chromium_path}"
+                if chromium_path
+                else " 시스템 Chromium을 찾지 못했습니다. packages.txt에 chromium이 필요합니다."
+            )
+            raise RuntimeError("Chromium 실행에 실패했습니다." + extra) from e
+
+        try:
+            context = browser.new_context(
+                locale="ko-KR",
+                viewport={"width": 1440, "height": 1200},
+                user_agent=(
+                    "Mozilla/5.0 (X11; Linux x86_64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/152.0.0.0 Safari/537.36"
+                ),
+            )
+            page = context.new_page()
+            page.goto(page_url, wait_until="domcontentloaded", timeout=45000)
+
+            # 동적 화면이 채워질 시간을 조금 주고, 네트워크가 잠잠해지면 더 일찍 진행한다.
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                page.wait_for_timeout(5000)
+
+            title = page.title()
+            final_url = page.url
+            body_text = page.locator("body").inner_text(timeout=10000)
+            html_text = page.content()
+
+            # 테스트 결과를 보기 좋게 줄인다.
+            normalized = re.sub(r"\n{3,}", "\n\n", body_text).strip()
+            excerpt = normalized[:3000]
+
+            return {
+                "title": title,
+                "final_url": final_url,
+                "nickname_found": nickname in body_text,
+                "hexa_word_found": ("헥사" in body_text) or ("환산" in body_text),
+                "body_length": len(body_text),
+                "html_length": len(html_text),
+                "excerpt": excerpt,
+                "chromium_path": chromium_path or "Playwright bundled Chromium",
+            }
+        finally:
+            browser.close()
+
+
+def fetch_maplescouter_spec(nickname):
+    """실제 페이지 파싱은 Cloud 렌더링 테스트 후 다음 단계에서 구현한다."""
+    raise RuntimeError(
+        "현재 버전은 MapleScouter 페이지 렌더링 테스트 단계입니다. "
+        "관리자 페이지 설정에서 'MapleScouter 페이지 읽기 테스트'를 먼저 실행해주세요."
     )
-    response.raise_for_status()
-
-    try:
-        data = response.json()
-    except Exception as e:
-        raise RuntimeError("MapleScouter 응답을 JSON으로 읽지 못했습니다.") from e
-
-    record = _find_maplescouter_champion_record(data, nickname)
-    if record is None:
-        raise RuntimeError("MapleScouter 응답에서 캐릭터 스펙을 찾지 못했습니다.")
-
-    level = parse_number(record.get("champion_level"))
-    combat = parse_number(record.get("champion_combat_power"))
-    hexa = parse_number(record.get("champion_hexa_stat"))
-
-    if level is None or combat is None or hexa is None:
-        raise RuntimeError("MapleScouter 응답에 레벨/전투력/헥사환산 값이 없습니다.")
-
-    image_url = clean(record.get("champion_image", ""))
-
-    return {
-        "level": int(level),
-        "combat": int(combat),
-        "hexa": int(hexa),
-        "image_url": image_url,
-    }
-
-
-def competition_ranks(values_by_row):
-    """원본 헥사환산 기준 공동순위: 1, 2, 2, 4 방식."""
-    numeric_values = [value for value in values_by_row.values() if value is not None]
-    return {
-        row_number: (
-            None
-            if value is None
-            else 1 + sum(1 for other in numeric_values if other > value)
-        )
-        for row_number, value in values_by_row.items()
-    }
-
-
-def apply_character_spec_update(nickname, latest_spec):
-    """레벨·전투력·헥사환산·외형을 반영하고 전체 순위를 다시 계산한다."""
-    worksheet = get_character_worksheet()
-    values = worksheet.get_all_values()
-
-    if not values:
-        raise RuntimeError("캐릭터목록 시트가 비어 있습니다.")
-
-    headers = [clean(v) for v in values[0]]
-    required = ["닉네임", "레벨", "전투력", "헥사환산", "순위"]
-    missing = [col for col in required if col not in headers]
-    if missing:
-        raise RuntimeError("캐릭터목록 시트에 필요한 열이 없습니다: " + ", ".join(missing))
-
-    col_index = {name: headers.index(name) + 1 for name in required}
-    if "대표이미지URL원본" in headers:
-        col_index["대표이미지URL원본"] = headers.index("대표이미지URL원본") + 1
-    target_row = None
-
-    for row_number, row_values in enumerate(values[1:], start=2):
-        nick_idx = col_index["닉네임"] - 1
-        row_nickname = clean(row_values[nick_idx]) if nick_idx < len(row_values) else ""
-        if row_nickname == nickname:
-            target_row = row_number
-            break
-
-    if target_row is None:
-        raise RuntimeError(f"캐릭터목록 시트에서 {nickname}을(를) 찾지 못했습니다.")
-
-    # 레벨 / 전투력 / 헥사환산 원본값 / 최신 캐릭터 외형 반영
-    worksheet.update_cell(target_row, col_index["레벨"], int(latest_spec["level"]))
-    worksheet.update_cell(target_row, col_index["전투력"], int(latest_spec["combat"]))
-    worksheet.update_cell(target_row, col_index["헥사환산"], int(latest_spec["hexa"]))
-
-    image_url = clean(latest_spec.get("image_url", ""))
-    if image_url and "대표이미지URL원본" in col_index:
-        worksheet.update_cell(target_row, col_index["대표이미지URL원본"], image_url)
-
-    # 방금 반영한 값을 포함해 전체 헥사환산으로 공동순위 재계산
-    values = worksheet.get_all_values()
-    hexa_idx = col_index["헥사환산"] - 1
-    nickname_idx = col_index["닉네임"] - 1
-    hexa_by_row = {}
-
-    for row_number, row_values in enumerate(values[1:], start=2):
-        row_nickname = clean(row_values[nickname_idx]) if nickname_idx < len(row_values) else ""
-        if not row_nickname:
-            continue
-        raw_hexa = row_values[hexa_idx] if hexa_idx < len(row_values) else ""
-        hexa_by_row[row_number] = parse_number(raw_hexa)
-
-    ranks = competition_ranks(hexa_by_row)
-    rank_col = col_index["순위"]
-    for row_number, rank_value in ranks.items():
-        worksheet.update_cell(row_number, rank_col, "" if rank_value is None else int(rank_value))
-
-    load_character_data.clear()
 
 
 # =========================================================
@@ -2612,6 +2586,39 @@ if st.session_state["show_page_settings"]:
         if st.session_state["page_admin_ok"]:
             st.success("관리자 로그인됨")
             st.caption("앞으로 관리자 전용 기능은 이곳에 추가됩니다.")
+
+            st.divider()
+            st.markdown("**🧪 MapleScouter 페이지 읽기 테스트**")
+            st.caption("API를 직접 호출하지 않고, Streamlit Cloud의 Chromium으로 실제 페이지가 열리는지만 확인합니다.")
+            test_nickname = st.text_input(
+                "테스트 닉네임",
+                value="우리집서리",
+                key="maplescouter_page_test_nickname",
+            )
+            if st.button(
+                "🧪 페이지 읽기 테스트",
+                key="maplescouter_page_test_button",
+                use_container_width=True,
+            ):
+                try:
+                    with st.spinner("MapleScouter 페이지를 여는 중입니다..."):
+                        result = read_maplescouter_page_test(test_nickname)
+                    st.success("Chromium에서 MapleScouter 페이지를 열었습니다.")
+                    st.write(f"**페이지 제목:** {result['title'] or '(없음)'}")
+                    st.write(f"**최종 주소:** {result['final_url']}")
+                    st.write(f"**닉네임 감지:** {'✅' if result['nickname_found'] else '❌'}")
+                    st.write(f"**헥사/환산 관련 텍스트 감지:** {'✅' if result['hexa_word_found'] else '❌'}")
+                    st.caption(
+                        f"본문 {result['body_length']:,}자 · HTML {result['html_length']:,}자 · "
+                        f"Chromium: {result['chromium_path']}"
+                    )
+                    with st.expander("렌더링된 페이지 텍스트 일부 보기"):
+                        st.code(result['excerpt'] or "(본문 텍스트 없음)", language=None)
+                except Exception as e:
+                    st.error("MapleScouter 페이지 읽기 테스트에 실패했습니다.")
+                    st.code(str(e))
+
+            st.divider()
             if st.button("관리자 로그아웃", key="page_admin_logout", use_container_width=True):
                 st.session_state["page_admin_ok"] = False
                 st.rerun()
