@@ -938,17 +938,17 @@ st.markdown(
     height: 27px;
 }
 
-/* 스펙변경은 실제 Streamlit 버튼을 카드 오른쪽 위에 겹쳐 표시한다.
-   type="tertiary"는 이 버튼에만 사용한다. */
-div[data-testid="column"] {
+/* 스펙변경 실제 Streamlit 버튼.
+   각 캐릭터 전용 wrapper를 기준으로 위치를 잡아서 다른 column으로 튀지 않게 한다. */
+div[class*="st-key-character_card_wrap_"] {
     position: relative;
 }
 
-div[data-testid="stButton"]:has(button[data-testid="stBaseButton-tertiary"]) {
+div[class*="st-key-character_card_wrap_"] div[data-testid="stButton"]:has(button[data-testid="stBaseButton-tertiary"]) {
     position: absolute;
-    top: 45px;
-    right: 18px;
-    z-index: 20;
+    top: 118px;
+    right: 20px;
+    z-index: 30;
     width: auto;
     margin: 0;
 }
@@ -2578,69 +2578,71 @@ if page == "👥 캐릭터 목록":
                 cid = int(row["_캐릭터ID"])
                 nickname = clean(row.get("닉네임", ""))
 
-                st.markdown(build_card(row), unsafe_allow_html=True)
+                # 캐릭터별 wrapper를 만들어 스펙변경 버튼의 위치 기준점을 고정한다.
+                with st.container(key=f"character_card_wrap_{cid}"):
+                    st.markdown(build_card(row), unsafe_allow_html=True)
 
-                # 페이지 이동 없는 실제 Streamlit 버튼.
-                # query parameter 링크를 쓰지 않으므로 로그인/session_state가 유지된다.
-                if nickname not in pending_spec_request_nicknames:
-                    if st.button(
-                        "🔄 스펙변경",
-                        key=f"request_spec_{cid}",
-                        type="tertiary",
-                        help="스펙이 바뀌었으면 눌러주세요",
-                    ):
-                        created = request_spec_change(nickname)
-                        if created:
-                            st.session_state["spec_request_message"] = (
-                                f"{nickname}의 스펙 변경 요청을 등록했습니다."
-                            )
-                        else:
-                            st.session_state["spec_request_message"] = (
-                                f"{nickname}은(는) 이미 변경 확인 대기 중입니다."
-                            )
-                        st.rerun()
-
-                button_col1, button_col2 = st.columns(2)
-
-                with button_col1:
-                    if st.button(
-                        "✏️ 보스희망 수정",
-                        key=f"edit_hope_{cid}",
-                        use_container_width=True,
-                    ):
-                        if st.session_state["editing_hope_nickname"] == nickname:
-                            st.session_state["editing_hope_nickname"] = None
-                            st.rerun()
-                        else:
-                            initialize_hope_editor(cid, nickname)
+                    # 페이지 이동 없는 실제 Streamlit 버튼.
+                    # query parameter 링크를 쓰지 않으므로 로그인/session_state가 유지된다.
+                    if nickname not in pending_spec_request_nicknames:
+                        if st.button(
+                            "🔄 스펙변경",
+                            key=f"request_spec_{cid}",
+                            type="tertiary",
+                            help="스펙이 바뀌었으면 눌러주세요",
+                        ):
+                            created = request_spec_change(nickname)
+                            if created:
+                                st.session_state["spec_request_message"] = (
+                                    f"{nickname}의 스펙 변경 요청을 등록했습니다."
+                                )
+                            else:
+                                st.session_state["spec_request_message"] = (
+                                    f"{nickname}은(는) 이미 변경 확인 대기 중입니다."
+                                )
                             st.rerun()
 
-                with button_col2:
-                    card_png = build_character_card_image(row)
+                    button_col1, button_col2 = st.columns(2)
 
-                    st.download_button(
-                        "📸 카드 저장",
-                        data=card_png,
-                        file_name=f"{nickname}_캐릭터카드.png",
-                        mime="image/png",
-                        key=f"download_card_{cid}",
-                        use_container_width=True,
-                    )
+                    with button_col1:
+                        if st.button(
+                            "✏️ 보스희망 수정",
+                            key=f"edit_hope_{cid}",
+                            use_container_width=True,
+                        ):
+                            if st.session_state["editing_hope_nickname"] == nickname:
+                                st.session_state["editing_hope_nickname"] = None
+                                st.rerun()
+                            else:
+                                initialize_hope_editor(cid, nickname)
+                                st.rerun()
 
-                if st.session_state["editing_hope_nickname"] == nickname:
-                    render_hope_editor(cid, nickname)
+                    with button_col2:
+                        card_png = build_character_card_image(row)
 
-                boss_url = clean(row.get("보스배율캡처URL", ""))
-                if boss_url:
-                    with st.expander("📊 보스배율 보기", expanded=False):
-                        boss_image = load_image_bytes(boss_url)
+                        st.download_button(
+                            "📸 카드 저장",
+                            data=card_png,
+                            file_name=f"{nickname}_캐릭터카드.png",
+                            mime="image/png",
+                            key=f"download_card_{cid}",
+                            use_container_width=True,
+                        )
 
-                        if boss_image:
-                            st.image(BytesIO(boss_image), use_container_width=True)
-                        else:
-                            st.warning("이미지를 불러오지 못했습니다.")
+                    if st.session_state["editing_hope_nickname"] == nickname:
+                        render_hope_editor(cid, nickname)
 
-                st.write("")
+                    boss_url = clean(row.get("보스배율캡처URL", ""))
+                    if boss_url:
+                        with st.expander("📊 보스배율 보기", expanded=False):
+                            boss_image = load_image_bytes(boss_url)
+
+                            if boss_image:
+                                st.image(BytesIO(boss_image), use_container_width=True)
+                            else:
+                                st.warning("이미지를 불러오지 못했습니다.")
+
+                    st.write("")
 
 
 # =========================================================
