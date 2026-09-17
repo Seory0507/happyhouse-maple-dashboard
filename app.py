@@ -843,6 +843,16 @@ def load_image_base64(url):
     if not image_bytes:
         return ""
 
+    if is_nexon_character_look_url(url):
+        try:
+            image = Image.open(BytesIO(image_bytes)).convert("RGBA")
+            image = trim_transparent_edges(image, padding=6)
+            buffer = BytesIO()
+            image.save(buffer, format="PNG", optimize=True)
+            image_bytes = buffer.getvalue()
+        except Exception:
+            pass
+
     encoded = base64.b64encode(image_bytes).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
@@ -1228,10 +1238,17 @@ st.markdown(
 .character-image {
     position: relative;
     z-index: 2;
-    max-width: 132px;
-    max-height: 148px;
+    max-width: 152px;
+    max-height: 170px;
     object-fit: contain;
     filter: drop-shadow(0 8px 10px rgba(0,0,0,.46));
+}
+
+.character-image.look-character {
+    max-width: 168px;
+    max-height: 188px;
+    transform: scale(1.22);
+    transform-origin: center center;
 }
 
 .nickname {
@@ -1497,12 +1514,18 @@ div[data-testid="stExpander"] {
     }
 
     .card-main {
-        grid-template-columns: 105px minmax(0,1fr);
+        grid-template-columns: 110px minmax(0,1fr);
     }
 
     .character-image {
-        max-width: 108px;
-        max-height: 126px;
+        max-width: 122px;
+        max-height: 140px;
+    }
+
+    .character-image.look-character {
+        max-width: 136px;
+        max-height: 156px;
+        transform: scale(1.15);
     }
 }
 </style>
@@ -1728,7 +1751,8 @@ def build_card(row):
 
     image_html = ""
     if image:
-        image_html = f'<img class="character-image" src="{image}">'
+        image_class = "character-image look-character" if is_nexon_character_look_url(image_url) else "character-image"
+        image_html = f'<img class="{image_class}" src="{image}">'
 
     spec_ts = int(time.time())
     spec_sig = make_spec_update_signature(nickname_raw, spec_ts)
@@ -1832,7 +1856,10 @@ def open_character_image_for_render(row):
         image_url = clean(row.get("대표이미지URL원본", ""))
         image_bytes = load_image_bytes(image_url)
         if image_bytes:
-            return Image.open(BytesIO(image_bytes)).convert("RGBA")
+            image = Image.open(BytesIO(image_bytes)).convert("RGBA")
+            if is_nexon_character_look_url(image_url):
+                image = trim_transparent_edges(image, padding=6)
+            return image
 
         if local_path:
             return Image.open(local_path).convert("RGBA")
@@ -1952,7 +1979,11 @@ def build_character_card_image(row):
 
     char_img = open_character_image_for_render(row)
     if char_img is not None:
-        char_img = resize_image_keep_ratio(char_img, 205, 225)
+        image_url = clean(row.get("대표이미지URL원본", ""))
+        if is_nexon_character_look_url(image_url):
+            char_img = resize_image_keep_ratio(char_img, 245, 270)
+        else:
+            char_img = resize_image_keep_ratio(char_img, 220, 240)
         paste_center(image, char_img, character_center_x, character_center_y)
 
     info_x = 285
