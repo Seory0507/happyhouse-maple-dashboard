@@ -416,11 +416,81 @@ def _find_chromium_executable():
     return None
 
 
-def read_maplescouter_page_test(nickname):
-    """실제 MapleScouter 페이지를 headless Chromium으로 열어 렌더링 여부만 확인한다.
+def _parse_korean_number_text(value):
+    """화면에 표시된 숫자(콤마/억/만)를 가능한 범위에서 정수로 변환한다."""
+    text = clean(value).replace(" ", "")
+    if not text:
+        return None
 
-    이 테스트는 MapleScouter API 엔드포인트나 api-key를 직접 사용하지 않는다.
-    아직 스펙 값을 파싱/저장하지 않고, Cloud에서 페이지 렌더링이 가능한지만 확인한다.
+    plain = re.fullmatch(r"[\d,]+", text)
+    if plain:
+        try:
+            return int(text.replace(",", ""))
+        except Exception:
+            return None
+
+    # 예: 1억8988만6886, 6.2만, 2억6천
+    total = 0.0
+    matched = False
+    patterns = [
+        (r"([\d.]+)억", 100_000_000),
+        (r"([\d.]+)천만", 10_000_000),
+        (r"([\d.]+)백만", 1_000_000),
+        (r"([\d.]+)십만", 100_000),
+        (r"([\d.]+)만", 10_000),
+        (r"([\d.]+)천", 1_000),
+        (r"([\d.]+)백", 100),
+    ]
+    remaining = text
+    for pattern, unit in patterns:
+        m = re.search(pattern, remaining)
+        if m:
+            total += float(m.group(1)) * unit
+            remaining = remaining.replace(m.group(0), "", 1)
+            matched = True
+
+    # 단위 뒤에 남은 순수 숫자가 있으면 더한다.
+    m = re.fullmatch(r"[\d,]+", remaining)
+    if m and remaining:
+        total += int(remaining.replace(",", ""))
+        matched = True
+
+    return int(round(total)) if matched else None
+
+
+def _extract_value_near_labels(lines, labels, max_after=4):
+    """라벨이 있는 줄과 그 뒤 몇 줄에서 값 후보와 문맥을 찾는다."""
+    contexts = []
+    candidates = []
+    for i, line in enumerate(lines):
+        if not any(label in line for label in labels):
+            continue
+        chunk = lines[i:i + max_after + 1]
+        contexts.append(" | ".join(chunk))
+
+        # 같은 줄의 라벨 뒤쪽 + 다음 줄들을 후보로 본다.
+        parts = []
+        for label in labels:
+            if label in line:
+                tail = line.split(label, 1)[1].strip(" :：\t")
+                if tail:
+                    parts.append(tail)
+        parts.extend(chunk[1:])
+
+        for part in parts:
+            for token in re.findall(r"(?:Lv\.?\s*)?[\d,.]+(?:억|천만|백만|십만|만|천|백)?", part):
+                cleaned = token.replace("Lv.", "").replace("Lv", "").strip()
+                number = _parse_korean_number_text(cleaned)
+                if number is not None:
+                    candidates.append((number, cleaned, part))
+    return candidates, contexts
+
+
+def read_maplescouter_page_spec(nickname):
+    """실제 MapleScouter 페이지를 headless Chromium으로 열고 DOM에 표시된 스펙을 추출한다.
+
+    API 엔드포인트나 api-key를 직접 호출하지 않는다. 화면/DOM에 렌더링된 정보만 읽는다.
+    테스트 단계이므로 파싱값과 함께 관련 문맥도 반환한다.
     """
     nickname = clean(nickname)
     if not nickname:
@@ -437,11 +507,7 @@ def read_maplescouter_page_test(nickname):
     with sync_playwright() as p:
         launch_kwargs = {
             "headless": True,
-            "args": [
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-            ],
+            "args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
         }
         if chromium_path:
             launch_kwargs["executable_path"] = chromium_path
@@ -459,7 +525,7 @@ def read_maplescouter_page_test(nickname):
         try:
             context = browser.new_context(
                 locale="ko-KR",
-                viewport={"width": 1440, "height": 1200},
+                viewport={"width": 1440, "height": 1400},
                 user_agent=(
                     "Mozilla/5.0 (X11; Linux x86_64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -468,27 +534,105 @@ def read_maplescouter_page_test(nickname):
             )
             page = context.new_page()
             page.goto(page_url, wait_until="domcontentloaded", timeout=45000)
-
-            # 동적 화면이 채워질 시간을 조금 주고, 네트워크가 잠잠해지면 더 일찍 진행한다.
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
-                page.wait_for_timeout(5000)
+                page.wait_for_timeout(6000)
 
             title = page.title()
             final_url = page.url
             body_text = page.locator("body").inner_text(timeout=10000)
             html_text = page.content()
+            lines = [re.sub(r"\s+", " ", line).strip() for line in body_text.splitlines()]
+            lines = [line for line in lines if line]
 
-            # 테스트 결과를 보기 좋게 줄인다.
+            # 레벨: Lv. 287 또는 '레벨' 주변 값
+            level = None
+            level_contexts = []
+            for m in re.finditer(r"\bLv\.?\s*(\d{1,3})\b", body_text, flags=re.I):
+                level = int(m.group(1))
+                level_contexts.append(m.group(0))
+                break
+            if level is None:
+                level_candidates, level_contexts = _extract_value_near_labels(lines, ["레벨"], 3)
+                if level_candidates:
+                    plausible = [x for x in level_candidates if 1 <= x[0] <= 400]
+                    if plausible:
+                        level = plausible[0][0]
+
+            combat_candidates, combat_contexts = _extract_value_near_labels(
+                lines, ["전투력", "전투력 환산"], 4
+            )
+            # 전투력은 보통 수백만 이상. 가장 큰 값을 우선하되 지나치게 큰 값은 제외.
+            plausible_combat = [x for x in combat_candidates if 1_000_000 <= x[0] <= 10_000_000_000]
+            combat = max((x[0] for x in plausible_combat), default=None)
+
+            hexa_candidates, hexa_contexts = _extract_value_near_labels(
+                lines,
+                ["헥사환산", "헥사 환산", "헥사 스탯", "헥사스탯", "환산 주스탯", "환산주스탯"],
+                5,
+            )
+            plausible_hexa = [x for x in hexa_candidates if 1_000 <= x[0] <= 500_000]
+
+            # 정밀값(콤마 포함 정수)을 먼저 선택한다. 6.2만 같은 축약값만 있으면 exact=False.
+            hexa = None
+            hexa_exact = False
+            for number, token, part in plausible_hexa:
+                digits = token.replace(",", "")
+                if re.fullmatch(r"\d{4,6}", digits):
+                    hexa = number
+                    hexa_exact = True
+                    break
+            if hexa is None and plausible_hexa:
+                hexa = plausible_hexa[0][0]
+
+            # HTML에 라벨과 함께 정밀 정수값이 남아있는 경우 한 번 더 탐색한다.
+            if not hexa_exact:
+                html_plain = html.unescape(re.sub(r"<[^>]+>", " ", html_text))
+                for keyword in ["헥사환산", "헥사 환산", "champion_hexa_stat"]:
+                    idx = html_plain.find(keyword)
+                    if idx >= 0:
+                        nearby = html_plain[idx:idx + 400]
+                        m = re.search(r"\b(\d{4,6})\b", nearby)
+                        if m:
+                            value = int(m.group(1))
+                            if 1_000 <= value <= 500_000:
+                                hexa = value
+                                hexa_exact = True
+                                hexa_contexts.append("HTML: " + re.sub(r"\s+", " ", nearby[:180]))
+                                break
+
+            # 캐릭터 외형 이미지 후보
+            image_urls = page.locator("img").evaluate_all(
+                "els => els.map(e => e.currentSrc || e.src || '').filter(Boolean)"
+            )
+            image_url = ""
+            for url in image_urls:
+                if "open.api.nexon.com/static/maplestory/character/look" in url:
+                    image_url = url
+                    break
+            if not image_url:
+                for url in image_urls:
+                    if "open.api.nexon.com" in url and "maplestory" in url:
+                        image_url = url
+                        break
+
             normalized = re.sub(r"\n{3,}", "\n\n", body_text).strip()
-            excerpt = normalized[:3000]
+            excerpt = normalized[:3500]
 
             return {
                 "title": title,
                 "final_url": final_url,
                 "nickname_found": nickname in body_text,
-                "hexa_word_found": ("헥사" in body_text) or ("환산" in body_text),
+                "level": level,
+                "combat": combat,
+                "hexa": hexa,
+                "hexa_exact": hexa_exact,
+                "image_url": image_url,
+                "level_contexts": level_contexts[:5],
+                "combat_contexts": combat_contexts[:8],
+                "hexa_contexts": hexa_contexts[:8],
+                "image_candidates": image_urls[:20],
                 "body_length": len(body_text),
                 "html_length": len(html_text),
                 "excerpt": excerpt,
@@ -498,12 +642,98 @@ def read_maplescouter_page_test(nickname):
             browser.close()
 
 
+def read_maplescouter_page_test(nickname):
+    """기존 테스트 버튼 호환용."""
+    result = read_maplescouter_page_spec(nickname)
+    result["hexa_word_found"] = bool(result.get("hexa_contexts")) or ("헥사" in result.get("excerpt", ""))
+    return result
+
+
 def fetch_maplescouter_spec(nickname):
-    """실제 페이지 파싱은 Cloud 렌더링 테스트 후 다음 단계에서 구현한다."""
-    raise RuntimeError(
-        "현재 버전은 MapleScouter 페이지 렌더링 테스트 단계입니다. "
-        "관리자 페이지 설정에서 'MapleScouter 페이지 읽기 테스트'를 먼저 실행해주세요."
-    )
+    """렌더링된 페이지에서 업데이트용 값을 읽는다.
+
+    순위는 원본 헥사환산 정수값이 필요하므로 축약값만 파싱된 경우에는 업데이트를 막는다.
+    """
+    result = read_maplescouter_page_spec(nickname)
+    if result.get("level") is None:
+        raise RuntimeError("MapleScouter 화면에서 레벨을 찾지 못했습니다.")
+    if result.get("combat") is None:
+        raise RuntimeError("MapleScouter 화면에서 전투력을 찾지 못했습니다.")
+    if result.get("hexa") is None:
+        raise RuntimeError("MapleScouter 화면에서 헥사환산을 찾지 못했습니다.")
+    if not result.get("hexa_exact"):
+        raise RuntimeError(
+            "헥사환산은 찾았지만 6.2만 같은 축약값만 확인되었습니다. "
+            "정확한 원본값을 찾기 전에는 순위가 틀릴 수 있어 업데이트를 막았습니다."
+        )
+    return {
+        "level": int(result["level"]),
+        "combat": int(result["combat"]),
+        "hexa": int(result["hexa"]),
+        "image_url": clean(result.get("image_url", "")),
+    }
+
+
+def competition_ranks(values_by_row):
+    """원본 헥사환산 기준 공동순위: 1, 2, 2, 4 방식."""
+    numeric_values = [value for value in values_by_row.values() if value is not None]
+    return {
+        row_number: None if value is None else 1 + sum(1 for other in numeric_values if other > value)
+        for row_number, value in values_by_row.items()
+    }
+
+
+def apply_character_spec_update(nickname, latest_spec):
+    """레벨·전투력·헥사환산·외형을 반영하고 전체 순위를 다시 계산한다."""
+    worksheet = get_character_worksheet()
+    values = worksheet.get_all_values()
+    if not values:
+        raise RuntimeError("캐릭터 목록 시트가 비어 있습니다.")
+
+    headers = [clean(v) for v in values[0]]
+    required = ["닉네임", "레벨", "전투력", "헥사환산", "순위"]
+    missing = [col for col in required if col not in headers]
+    if missing:
+        raise RuntimeError("캐릭터 목록 시트에 필요한 열이 없습니다: " + ", ".join(missing))
+
+    col_index = {name: headers.index(name) + 1 for name in required}
+    if "대표이미지URL원본" in headers:
+        col_index["대표이미지URL원본"] = headers.index("대표이미지URL원본") + 1
+
+    target_row = None
+    for row_number, row_values in enumerate(values[1:], start=2):
+        nick_idx = col_index["닉네임"] - 1
+        row_nickname = clean(row_values[nick_idx]) if nick_idx < len(row_values) else ""
+        if row_nickname == nickname:
+            target_row = row_number
+            break
+    if target_row is None:
+        raise RuntimeError(f"캐릭터 목록 시트에서 {nickname}을(를) 찾지 못했습니다.")
+
+    worksheet.update_cell(target_row, col_index["레벨"], int(latest_spec["level"]))
+    worksheet.update_cell(target_row, col_index["전투력"], int(latest_spec["combat"]))
+    worksheet.update_cell(target_row, col_index["헥사환산"], int(latest_spec["hexa"]))
+    image_url = clean(latest_spec.get("image_url", ""))
+    if image_url and "대표이미지URL원본" in col_index:
+        worksheet.update_cell(target_row, col_index["대표이미지URL원본"], image_url)
+
+    values = worksheet.get_all_values()
+    hexa_idx = col_index["헥사환산"] - 1
+    nickname_idx = col_index["닉네임"] - 1
+    hexa_by_row = {}
+    for row_number, row_values in enumerate(values[1:], start=2):
+        row_nickname = clean(row_values[nickname_idx]) if nickname_idx < len(row_values) else ""
+        if not row_nickname:
+            continue
+        raw_hexa = row_values[hexa_idx] if hexa_idx < len(row_values) else ""
+        hexa_by_row[row_number] = parse_number(raw_hexa)
+
+    ranks = competition_ranks(hexa_by_row)
+    rank_col = col_index["순위"]
+    for row_number, rank_value in ranks.items():
+        worksheet.update_cell(row_number, rank_col, "" if rank_value is None else int(rank_value))
+
+    load_character_data.clear()
 
 
 # =========================================================
@@ -2603,15 +2833,45 @@ if st.session_state["show_page_settings"]:
                 try:
                     with st.spinner("MapleScouter 페이지를 여는 중입니다..."):
                         result = read_maplescouter_page_test(test_nickname)
-                    st.success("Chromium에서 MapleScouter 페이지를 열었습니다.")
+                    st.success("Chromium에서 MapleScouter 페이지를 열고 파싱을 시도했습니다.")
                     st.write(f"**페이지 제목:** {result['title'] or '(없음)'}")
                     st.write(f"**최종 주소:** {result['final_url']}")
                     st.write(f"**닉네임 감지:** {'✅' if result['nickname_found'] else '❌'}")
-                    st.write(f"**헥사/환산 관련 텍스트 감지:** {'✅' if result['hexa_word_found'] else '❌'}")
+
+                    st.markdown("**📌 추출 결과**")
+                    a, b = st.columns(2)
+                    with a:
+                        st.metric("레벨", f"Lv. {result['level']}" if result.get('level') is not None else "못 찾음")
+                        st.metric("전투력", format_combat_power(result['combat']) if result.get('combat') is not None else "못 찾음")
+                    with b:
+                        hexa_text = (
+                            f"{result['hexa']:,} ({format_hexa(result['hexa'])})"
+                            if result.get('hexa') is not None else "못 찾음"
+                        )
+                        st.metric("헥사환산", hexa_text)
+                        st.metric("헥사 원본값", "정밀값 ✅" if result.get('hexa_exact') else "축약값/미확인 ⚠️")
+
+                    if result.get('image_url'):
+                        st.success("캐릭터 코디 이미지 후보를 찾았습니다.")
+                        st.image(result['image_url'], width=180)
+                        with st.expander("코디 이미지 URL 보기"):
+                            st.code(result['image_url'], language=None)
+                    else:
+                        st.warning("캐릭터 코디 이미지 URL을 아직 찾지 못했습니다.")
+
                     st.caption(
                         f"본문 {result['body_length']:,}자 · HTML {result['html_length']:,}자 · "
                         f"Chromium: {result['chromium_path']}"
                     )
+
+                    with st.expander("🔎 파싱 근거 문맥 보기"):
+                        st.write("**레벨 관련**")
+                        st.code("\n".join(result.get('level_contexts') or ["(없음)"]), language=None)
+                        st.write("**전투력 관련**")
+                        st.code("\n".join(result.get('combat_contexts') or ["(없음)"]), language=None)
+                        st.write("**헥사환산 관련**")
+                        st.code("\n".join(result.get('hexa_contexts') or ["(없음)"]), language=None)
+
                     with st.expander("렌더링된 페이지 텍스트 일부 보기"):
                         st.code(result['excerpt'] or "(본문 텍스트 없음)", language=None)
                 except Exception as e:
