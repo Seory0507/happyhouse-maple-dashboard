@@ -610,6 +610,24 @@ def read_maplescouter_page_spec(nickname):
             final_url = page.url
             body_text = page.locator("body").inner_text(timeout=10000)
             html_text = page.content()
+
+            # Cloudflare 보안 확인 페이지 감지
+            security_text = f"{title}\n{body_text}".lower()
+            cloudflare_markers = [
+                "잠시만 기다리십시오",
+                "보안 확인 수행 중",
+                "사용자가 봇이 아님을 확인",
+                "cloudflare",
+                "ray id",
+                "checking your browser",
+                "verify you are human",
+            ]
+            if any(marker.lower() in security_text for marker in cloudflare_markers):
+                raise RuntimeError(
+                    "MapleScouter 보안 확인 페이지가 표시되어 현재 스펙을 불러올 수 없습니다. "
+                    "기존 정보는 변경되지 않았습니다. 잠시 후 다시 시도해주세요."
+                )
+
             lines = [re.sub(r"\s+", " ", line).strip() for line in body_text.splitlines()]
             lines = [line for line in lines if line]
 
