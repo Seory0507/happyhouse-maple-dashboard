@@ -586,7 +586,25 @@ def read_maplescouter_page_spec(nickname):
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
-                page.wait_for_timeout(6000)
+                pass
+
+            # MapleScouter가 클라이언트 렌더링으로 스펙을 늦게 그리는 경우가 있어
+            # 닉네임 / Lv / 레벨 텍스트가 실제 DOM에 나타날 때까지 조금 더 기다린다.
+            try:
+                page.wait_for_function(
+                    """(nickname) => {
+                        const text = document.body ? document.body.innerText : '';
+                        return text.includes(nickname) && (
+                            /\bLv\.?\s*\d{1,3}\b/i.test(text) ||
+                            /레벨\s*[:：]?\s*\d{1,3}/.test(text)
+                        );
+                    }""",
+                    nickname,
+                    timeout=15000,
+                )
+            except Exception:
+                # 그래도 실패하면 기존처럼 잠깐 기다린 뒤 현재 DOM을 읽는다.
+                page.wait_for_timeout(5000)
 
             title = page.title()
             final_url = page.url
@@ -595,19 +613,43 @@ def read_maplescouter_page_spec(nickname):
             lines = [re.sub(r"\s+", " ", line).strip() for line in body_text.splitlines()]
             lines = [line for line in lines if line]
 
-            # 레벨: Lv. 287 또는 '레벨' 주변 값
+            # 레벨 파싱을 여러 표기 방식으로 시도한다.
             level = None
             level_contexts = []
-            for m in re.finditer(r"\bLv\.?\s*(\d{1,3})\b", body_text, flags=re.I):
-                level = int(m.group(1))
-                level_contexts.append(m.group(0))
-                break
+
+            level_patterns = [
+                r"\bLv\.?\s*[:：-]?\s*(\d{1,3})\b",   # Lv. 290 / Lv 290 / Lv:290
+                r"\bLEVEL\s*[:：-]?\s*(\d{1,3})\b",     # LEVEL 290
+                r"레벨\s*[:：-]?\s*(\d{1,3})\b",          # 레벨 290
+            ]
+            for pattern in level_patterns:
+                m = re.search(pattern, body_text, flags=re.I)
+                if m:
+                    value = int(m.group(1))
+                    if 1 <= value <= 400:
+                        level = value
+                        level_contexts.append(m.group(0))
+                        break
+
+            # body text에서 못 찾으면 라벨 주변 숫자 후보를 확인한다.
             if level is None:
-                level_candidates, level_contexts = _extract_value_near_labels(lines, ["레벨"], 3)
-                if level_candidates:
-                    plausible = [x for x in level_candidates if 1 <= x[0] <= 400]
-                    if plausible:
-                        level = plausible[0][0]
+                level_candidates, level_contexts = _extract_value_near_labels(lines, ["레벨", "LEVEL", "Level"], 4)
+                plausible = [x for x in level_candidates if 1 <= x[0] <= 400]
+                if plausible:
+                    level = int(plausible[0][0])
+
+            # 마지막 보강: 렌더링된 HTML 안의 텍스트에서도 Lv / 레벨 패턴을 한 번 더 찾는다.
+            if level is None:
+                html_plain_for_level = html.unescape(re.sub(r"<[^>]+>", " ", html_text))
+                html_plain_for_level = re.sub(r"\s+", " ", html_plain_for_level)
+                for pattern in level_patterns:
+                    m = re.search(pattern, html_plain_for_level, flags=re.I)
+                    if m:
+                        value = int(m.group(1))
+                        if 1 <= value <= 400:
+                            level = value
+                            level_contexts.append("HTML: " + m.group(0))
+                            break
 
             combat_candidates, combat_contexts = _extract_value_near_labels(
                 lines, ["전투력", "전투력 환산"], 4
@@ -756,7 +798,14 @@ def fetch_maplescouter_spec(nickname):
     """
     result = read_maplescouter_page_spec(nickname)
     if result.get("level") is None:
-        raise RuntimeError("MapleScouter 화면에서 레벨을 찾지 못했습니다.")
+        excerpt = clean(result.get("excerpt", ""))[:600]
+        details = (
+            f" 페이지 제목: {result.get('title') or '(없음)'} / "
+            f"최종 주소: {result.get('final_url') or '(없음)'}"
+        )
+        if excerpt:
+            details += f" / 본문 일부: {excerpt}"
+        raise RuntimeError("MapleScouter 화면에서 레벨을 찾지 못했습니다." + details)
     if result.get("combat") is None:
         raise RuntimeError("MapleScouter 화면에서 전투력을 찾지 못했습니다.")
     if result.get("hexa") is None:
