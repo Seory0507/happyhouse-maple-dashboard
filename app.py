@@ -1019,7 +1019,7 @@ def load_image_base64(url):
 # =========================================================
 # 데이터 읽기
 # =========================================================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=30)
 def load_character_data():
     sheet_id = get_sheet_id(SHEET_URL)
     if not sheet_id:
@@ -1798,9 +1798,34 @@ if spec_update_param:
 # =========================================================
 # SORT / ID
 # =========================================================
-if "순위" in df.columns:
+# 순위는 시트의 기존 '순위' 값을 사용하지 않고, 현재 헥사환산 원본값으로 매번 계산한다.
+# 공동순위는 competition ranking(1, 2, 2, 4) 방식이다.
+if "헥사환산" in df.columns:
+    hexa_numeric = pd.to_numeric(
+        df["헥사환산"]
+        .fillna("")
+        .astype(str)
+        .str.replace(",", "", regex=False)
+        .str.strip(),
+        errors="coerce",
+    )
+
+    df["_헥사원본값"] = hexa_numeric
+    df["순위"] = hexa_numeric.rank(method="min", ascending=False).astype("Int64")
     df["순위정렬"] = pd.to_numeric(df["순위"], errors="coerce")
-    df = df.sort_values("순위정렬", ascending=True, na_position="last")
+
+    # 같은 헥환은 같은 순위이며, 동률 내에서는 구글시트의 기존 행 순서를 유지한다.
+    df["_원본행순서"] = range(len(df))
+    df = df.sort_values(
+        ["순위정렬", "_원본행순서"],
+        ascending=[True, True],
+        na_position="last",
+        kind="stable",
+    )
+elif "순위" in df.columns:
+    # 헥사환산 열이 없는 비정상 상황에서만 기존 순위를 임시 사용한다.
+    df["순위정렬"] = pd.to_numeric(df["순위"], errors="coerce")
+    df = df.sort_values("순위정렬", ascending=True, na_position="last", kind="stable")
 
 df = df.reset_index(drop=True)
 df["_캐릭터ID"] = df.index.astype(int)
