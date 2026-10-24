@@ -3455,16 +3455,6 @@ if page == "👥 캐릭터 목록":
                 if st.session_state["editing_hope_nickname"] == nickname:
                     render_hope_editor(cid, nickname)
 
-                boss_url = clean(row.get("보스배율캡처URL", ""))
-                if boss_url:
-                    with st.expander("📊 보스배율 보기", expanded=False):
-                        boss_image = load_image_bytes(boss_url)
-
-                        if boss_image:
-                            st.image(BytesIO(boss_image), use_container_width=True)
-                        else:
-                            st.warning("이미지를 불러오지 못했습니다.")
-
                 st.write("")
 
 
