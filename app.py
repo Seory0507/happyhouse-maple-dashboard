@@ -1842,6 +1842,34 @@ div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer
     opacity: 1 !important;
 }
 
+/* 스펙 업데이트 전용 영역: Streamlit 위젯 라벨/캡션까지 확실하게 밝게 */
+div[class*="st-key-spec_update_box_"] [data-testid="stMarkdownContainer"] p,
+div[class*="st-key-spec_update_box_"] [data-testid="stMarkdownContainer"] strong,
+div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label p,
+div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label span,
+div[class*="st-key-spec_update_box_"] [data-testid="stCaptionContainer"],
+div[class*="st-key-spec_update_box_"] [data-testid="stCaptionContainer"] p,
+div[class*="st-key-spec_update_box_"] [data-testid="stCaptionContainer"] span {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    opacity: 1 !important;
+}
+
+/* 설명/보조 문구는 살짝 낮은 밝기로 */
+div[class*="st-key-spec_update_box_"] [data-testid="stCaptionContainer"],
+div[class*="st-key-spec_update_box_"] [data-testid="stCaptionContainer"] p,
+div[class*="st-key-spec_update_box_"] [data-testid="stCaptionContainer"] span {
+    color: #c8d6e8 !important;
+    -webkit-text-fill-color: #c8d6e8 !important;
+}
+
+/* 흰 입력창 안의 실제 입력 숫자는 어두운 색 유지 */
+div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] input {
+    color: #182230 !important;
+    -webkit-text-fill-color: #182230 !important;
+    opacity: 1 !important;
+}
+
 @media (max-width: 1000px) {
     .maple-logo {
         max-width: 145px;
@@ -3502,7 +3530,7 @@ if page == "👥 캐릭터 목록":
                     current_spec = preview["current"]
                     latest_spec = preview["latest"]
 
-                    with st.container(border=True):
+                    with st.container(border=True, key=f"spec_update_box_{cid}"):
                         st.markdown(f"**🔄 {nickname} 스펙 업데이트**")
                         st.caption("레벨·전투력·코디는 넥슨 Open API에서 가져오고, 헥사환산·DPS·쿨뚝은 직접 입력합니다.")
 
