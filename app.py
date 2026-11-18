@@ -1870,18 +1870,44 @@ div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] input {
     opacity: 1 !important;
 }
 
-/* 입력 라벨 오른쪽 ? 도움말 아이콘은 라벨과 같은 밝은 색 */
+/* 입력 라벨 오른쪽 ? 도움말 아이콘 */
 div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"],
-div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] *,
-div[class*="st-key-spec_update_box_"] button[aria-label*="help" i],
-div[class*="st-key-spec_update_box_"] button[aria-label*="help" i] *,
-div[class*="st-key-spec_update_box_"] button[aria-label*="도움" i],
-div[class*="st-key-spec_update_box_"] button[aria-label*="도움" i] * {
-    color: #f6f8fe !important;
-    -webkit-text-fill-color: #f6f8fe !important;
-    fill: #f6f8fe !important;
-    stroke: #f6f8fe !important;
+div[class*="st-key-spec_update_box_"] button[data-testid="stTooltipIcon"] {
+    background: #101927 !important;
+    border: 1px solid #ffffff !important;
+    border-radius: 50% !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    box-shadow: none !important;
     opacity: 1 !important;
+}
+
+div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] button {
+    background: #101927 !important;
+    border: 0 !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    box-shadow: none !important;
+}
+
+div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] svg,
+div[class*="st-key-spec_update_box_"] button[data-testid="stTooltipIcon"] svg {
+    background: transparent !important;
+    color: #ffffff !important;
+    fill: currentColor !important;
+    stroke: none !important;
+}
+
+/* SVG가 circle + ? 형태일 때 원 내부는 사이트 배경색, 테두리만 흰색 */
+div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] svg circle,
+div[class*="st-key-spec_update_box_"] button[data-testid="stTooltipIcon"] svg circle {
+    fill: #101927 !important;
+    stroke: #ffffff !important;
+}
+
+div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] svg path,
+div[class*="st-key-spec_update_box_"] button[data-testid="stTooltipIcon"] svg path {
+    fill: #ffffff !important;
 }
 
 /* ?를 눌렀을 때 나오는 도움말 팝업도 밝게 */
@@ -1927,25 +1953,7 @@ div[class*="st-key-spec_update_box_"] [data-testid="stAlert"] * {
 
 
 /* ===== 스펙 업데이트 예외 색상 최종 보정 ===== */
-/* 도움말 ? 버튼: 배경은 투명, 테두리와 물음표만 흰색 */
-div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label button,
-div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] {
-    background: #101927 !important;
-    border: 1px solid #f6f8fe !important;
-    border-radius: 999px !important;
-    color: #f6f8fe !important;
-    -webkit-text-fill-color: #f6f8fe !important;
-    opacity: 1 !important;
-}
-
-div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label button *,
-div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] * {
-    color: #f6f8fe !important;
-    -webkit-text-fill-color: #f6f8fe !important;
-    fill: #f6f8fe !important;
-    stroke: #f6f8fe !important;
-    opacity: 1 !important;
-}
+/* 도움말 아이콘은 위의 전용 규칙을 그대로 사용한다. */
 
 /* 경고 박스 배경은 유지하고 안의 글자는 완전 검정색 */
 div[class*="st-key-spec_update_box_"] [role="alert"],
@@ -1990,35 +1998,6 @@ div[class*="st-key-spec_update_box_"] button[kind="primary"] * {
     unsafe_allow_html=True,
 )
 
-
-# ? 도움말 아이콘만 최종 보정
-st.markdown(
-    """
-<style>
-/* 스펙 업데이트 입력칸의 도움말 ? 아이콘만 보정 */
-button[aria-label*="help"],
-button[aria-label*="Help"],
-button[title*="help"],
-button[title*="Help"] {
-    background: transparent !important;
-    border: 1px solid #ffffff !important;
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
-    box-shadow: none !important;
-}
-
-button[aria-label*="help"] svg,
-button[aria-label*="Help"] svg,
-button[title*="help"] svg,
-button[title*="Help"] svg {
-    color: #ffffff !important;
-    fill: #ffffff !important;
-    stroke: #ffffff !important;
-}
-</style>
-""",
-    unsafe_allow_html=True,
-)
 
 # =========================================================
 # HEADER
