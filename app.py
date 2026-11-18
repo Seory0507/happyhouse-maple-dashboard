@@ -1870,54 +1870,62 @@ div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] input {
     opacity: 1 !important;
 }
 
-/* 입력 라벨 오른쪽 ? 도움말 아이콘 */
-div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"],
-div[class*="st-key-spec_update_box_"] button[data-testid="stTooltipIcon"] {
-    background: #101927 !important;
-    border: 1px solid #ffffff !important;
-    border-radius: 50% !important;
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
-    box-shadow: none !important;
-    opacity: 1 !important;
+/* 스펙 직접입력용 커스텀 도움말 아이콘 */
+.custom-input-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    color: #f6f8fe;
+    font-size: .88rem;
+    font-weight: 700;
 }
 
-div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] button {
-    background: #101927 !important;
-    border: 0 !important;
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
-    box-shadow: none !important;
+.custom-help-dot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 1px solid #ffffff;
+    border-radius: 50%;
+    background: #101927;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: help;
+    user-select: none;
 }
 
-div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] svg,
-div[class*="st-key-spec_update_box_"] button[data-testid="stTooltipIcon"] svg {
-    background: transparent !important;
-    color: #ffffff !important;
-    fill: currentColor !important;
-    stroke: none !important;
+.custom-help-dot::after {
+    content: attr(data-help);
+    position: absolute;
+    z-index: 9999;
+    right: 0;
+    bottom: calc(100% + 8px);
+    width: max-content;
+    max-width: 290px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #26364d;
+    border: 1px solid rgba(255,255,255,.18);
+    color: #f6f8fe;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.45;
+    white-space: normal;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .12s ease;
 }
 
-/* SVG가 circle + ? 형태일 때 원 내부는 사이트 배경색, 테두리만 흰색 */
-div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] svg circle,
-div[class*="st-key-spec_update_box_"] button[data-testid="stTooltipIcon"] svg circle {
-    fill: #101927 !important;
-    stroke: #ffffff !important;
-}
-
-div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] svg path,
-div[class*="st-key-spec_update_box_"] button[data-testid="stTooltipIcon"] svg path {
-    fill: #ffffff !important;
-}
-
-/* ?를 눌렀을 때 나오는 도움말 팝업도 밝게 */
-div[data-baseweb="popover"] [role="tooltip"],
-div[data-baseweb="popover"] [role="tooltip"] *,
-div[role="tooltip"],
-div[role="tooltip"] * {
-    color: #f6f8fe !important;
-    -webkit-text-fill-color: #f6f8fe !important;
-    opacity: 1 !important;
+.custom-help-dot:hover::after {
+    opacity: 1;
+    visibility: visible;
 }
 
 /* warning은 위의 강제 밝은 글자 규칙에서 제외하고 Streamlit 경고용 어두운 글자로 복원 */
@@ -3671,22 +3679,36 @@ if page == "👥 캐릭터 목록":
                         st.divider()
                         manual_col1, manual_col2, manual_col3 = st.columns(3)
                         with manual_col1:
+                            st.markdown(
+                                '<div class="custom-input-label">'
+                                '<span>헥사환산</span>'
+                                '<span class="custom-help-dot" data-help="환산사이트의 헥사환산 원본 숫자만 입력하세요. 예: 63842">?</span>'
+                                '</div>',
+                                unsafe_allow_html=True,
+                            )
                             hexa_input = st.text_input(
                                 "헥사환산",
                                 value=str(current_spec.get("hexa", 0) or ""),
                                 key=f"manual_hexa_{cid}",
-                                help="환산사이트의 헥사환산 원본 숫자만 입력하세요. 예: 63842",
+                                label_visibility="collapsed",
                             )
                             parsed_hexa = parse_number(hexa_input)
                             if parsed_hexa is not None:
                                 st.caption(f"표시: {int(parsed_hexa):,} ({format_hexa(parsed_hexa)})")
 
                         with manual_col2:
+                            st.markdown(
+                                '<div class="custom-input-label">'
+                                '<span>DPS</span>'
+                                '<span class="custom-help-dot" data-help="환산사이트 DPS를 단위 없이 원본 숫자로 입력하세요. 예: 3152518610000">?</span>'
+                                '</div>',
+                                unsafe_allow_html=True,
+                            )
                             dps_input = st.text_input(
                                 "DPS",
                                 value=str(current_spec.get("dps", 0) or ""),
                                 key=f"manual_dps_{cid}",
-                                help="환산사이트 DPS를 단위 없이 원본 숫자로 입력하세요. 예: 3152518610000",
+                                label_visibility="collapsed",
                             )
                             parsed_dps = parse_number(dps_input)
                             if parsed_dps is not None:
@@ -3694,11 +3716,18 @@ if page == "👥 캐릭터 목록":
 
                         with manual_col3:
                             current_cooldown = current_spec.get("cooldown")
+                            st.markdown(
+                                '<div class="custom-input-label">'
+                                '<span>쿨뚝</span>'
+                                '<span class="custom-help-dot" data-help="쿨뚝 초를 숫자로 입력하세요. 예: 4. 없으면 비워두세요.">?</span>'
+                                '</div>',
+                                unsafe_allow_html=True,
+                            )
                             cooldown_input = st.text_input(
                                 "쿨뚝",
                                 value="" if current_cooldown is None else str(current_cooldown),
                                 key=f"manual_cooldown_{cid}",
-                                help="쿨뚝 초를 숫자로 입력하세요. 예: 4. 없으면 비워두세요.",
+                                label_visibility="collapsed",
                             )
                             parsed_cooldown = parse_cooldown(cooldown_input)
                             if clean(cooldown_input) and parsed_cooldown is not None:
