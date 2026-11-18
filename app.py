@@ -4062,16 +4062,25 @@ elif page == "📊 희망 보스 배율 입력":
     st.markdown(
         """
 <style>
-/* 희망 보스 배율 입력 페이지의 일반 텍스트 */
-[data-testid="stMarkdownContainer"] p,
-[data-testid="stMarkdownContainer"] h1,
-[data-testid="stMarkdownContainer"] h2,
-[data-testid="stMarkdownContainer"] h3,
-[data-testid="stMarkdownContainer"] h4,
-[data-testid="stCaptionContainer"],
-[data-testid="stCaptionContainer"] p {
+/* 희망 보스 배율 입력 페이지의 본문 텍스트만 밝게 */
+.main .block-container [data-testid="stMarkdownContainer"] p,
+.main .block-container [data-testid="stMarkdownContainer"] h1,
+.main .block-container [data-testid="stMarkdownContainer"] h2,
+.main .block-container [data-testid="stMarkdownContainer"] h3,
+.main .block-container [data-testid="stMarkdownContainer"] h4,
+.main .block-container [data-testid="stCaptionContainer"],
+.main .block-container [data-testid="stCaptionContainer"] p {
     color: #f6f8fe !important;
     -webkit-text-fill-color: #f6f8fe !important;
+}
+
+/* 링크 버튼/사이드바 버튼은 Streamlit 기본 글자색으로 복원 */
+[data-testid="stLinkButton"] a,
+[data-testid="stLinkButton"] a *,
+[data-testid="stSidebar"] button,
+[data-testid="stSidebar"] button * {
+    color: initial !important;
+    -webkit-text-fill-color: initial !important;
 }
 
 /* 배율 입력 라벨/보조 텍스트 */
@@ -4152,16 +4161,15 @@ elif page == "📊 희망 보스 배율 입력":
                 current_nickname = nickname
                 st.markdown(f"### {html.escape(nickname)}")
 
-                char_row = character_rows_by_nickname.get(nickname)
-                stat_url = get_stat_url(char_row) if char_row is not None else ""
-                if stat_url:
-                    st.link_button(
-                        "🔎 환산주스탯 열기",
-                        stat_url,
-                        use_container_width=False,
-                    )
-                else:
-                    st.caption("환산주스탯 URL이 등록되어 있지 않습니다.")
+                boss_ratio_url = (
+                    "https://maplescouter.com/ko/result?"
+                    f"name={quote(nickname)}"
+                )
+                st.link_button(
+                    "🔎 보스배율 열기",
+                    boss_ratio_url,
+                    use_container_width=False,
+                )
 
             current_ratio = get_boss_ratio(nickname, boss, difficulty)
             c1, c2 = st.columns([2.2, 1])
