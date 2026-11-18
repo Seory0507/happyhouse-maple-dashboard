@@ -1938,6 +1938,21 @@ div[class*="st-key-spec_update_box_"] [data-testid="stAlert"] * {
     opacity: 1 !important;
 }
 
+
+/* 스펙 직접입력 오류 전용 경고창 */
+.spec-input-warning {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    padding: 14px 16px;
+    border-radius: 9px;
+    background: #fff6d8;
+    border: 1px solid rgba(214, 170, 60, .28);
+    color: #111111 !important;
+    -webkit-text-fill-color: #111111 !important;
+    font-size: .92rem;
+    font-weight: 600;
+}
+
 @media (max-width: 1000px) {
     .maple-logo {
         max-width: 145px;
@@ -3742,7 +3757,10 @@ if page == "👥 캐릭터 목록":
                             input_error = "쿨뚝은 초 숫자로 입력해주세요."
 
                         if input_error:
-                            st.warning(input_error)
+                            st.markdown(
+                                f'<div class="spec-input-warning">{html.escape(input_error)}</div>',
+                                unsafe_allow_html=True,
+                            )
 
                         cancel_col, apply_col = st.columns(2)
                         with cancel_col:
