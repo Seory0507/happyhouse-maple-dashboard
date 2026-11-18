@@ -1991,6 +1991,35 @@ div[class*="st-key-spec_update_box_"] button[kind="primary"] * {
 )
 
 
+# ? 도움말 아이콘만 최종 보정
+st.markdown(
+    """
+<style>
+/* 스펙 업데이트 입력칸의 도움말 ? 아이콘만 보정 */
+button[aria-label*="help"],
+button[aria-label*="Help"],
+button[title*="help"],
+button[title*="Help"] {
+    background: transparent !important;
+    border: 1px solid #ffffff !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    box-shadow: none !important;
+}
+
+button[aria-label*="help"] svg,
+button[aria-label*="Help"] svg,
+button[title*="help"] svg,
+button[title*="Help"] svg {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+    stroke: #ffffff !important;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 # =========================================================
 # HEADER
 # =========================================================
