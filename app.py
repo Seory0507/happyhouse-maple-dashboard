@@ -4062,36 +4062,41 @@ elif page == "📊 희망 보스 배율 입력":
     st.markdown(
         """
 <style>
-/* 희망 보스 배율 입력 페이지의 본문 텍스트만 밝게 */
+/* 희망 보스 배율 입력 페이지: 본문 정보는 밝게 유지 */
 .main .block-container [data-testid="stMarkdownContainer"] p,
+.main .block-container [data-testid="stMarkdownContainer"] span,
+.main .block-container [data-testid="stMarkdownContainer"] strong,
 .main .block-container [data-testid="stMarkdownContainer"] h1,
 .main .block-container [data-testid="stMarkdownContainer"] h2,
 .main .block-container [data-testid="stMarkdownContainer"] h3,
 .main .block-container [data-testid="stMarkdownContainer"] h4,
 .main .block-container [data-testid="stCaptionContainer"],
-.main .block-container [data-testid="stCaptionContainer"] p {
+.main .block-container [data-testid="stCaptionContainer"] p,
+.main .block-container [data-testid="stCaptionContainer"] span,
+.main .block-container [data-testid="stTextInput"] label,
+.main .block-container [data-testid="stTextInput"] label p,
+.main .block-container [data-testid="stTextInput"] label span {
     color: #f6f8fe !important;
     -webkit-text-fill-color: #f6f8fe !important;
 }
 
-/* 링크 버튼/사이드바 버튼은 Streamlit 기본 글자색으로 복원 */
-[data-testid="stLinkButton"] a,
-[data-testid="stLinkButton"] a *,
-[data-testid="stSidebar"] button,
-[data-testid="stSidebar"] button * {
-    color: initial !important;
-    -webkit-text-fill-color: initial !important;
+/* 보스배율 열기 버튼만 밝은 버튼 위에서 읽히도록 어두운 글자 */
+.main .block-container [data-testid="stLinkButton"] a,
+.main .block-container [data-testid="stLinkButton"] a p,
+.main .block-container [data-testid="stLinkButton"] a span {
+    color: #31333f !important;
+    -webkit-text-fill-color: #31333f !important;
 }
 
-/* 배율 입력 라벨/보조 텍스트 */
-[data-testid="stTextInput"] label,
-[data-testid="stTextInput"] label p {
-    color: #dce7f5 !important;
-    -webkit-text-fill-color: #dce7f5 !important;
+/* 사이드바 메뉴 버튼은 기존 밝은 버튼에 맞는 어두운 글자 유지 */
+[data-testid="stSidebar"] button p,
+[data-testid="stSidebar"] button span {
+    color: #31333f !important;
+    -webkit-text-fill-color: #31333f !important;
 }
 
 /* 입력칸 안 숫자는 흰 배경에서 읽기 쉽도록 어둡게 유지 */
-[data-testid="stTextInput"] input {
+.main .block-container [data-testid="stTextInput"] input {
     color: #111827 !important;
     -webkit-text-fill-color: #111827 !important;
 }
