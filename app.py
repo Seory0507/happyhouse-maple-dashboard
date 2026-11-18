@@ -3329,6 +3329,48 @@ def calculate_party_stats(member_ids):
     return int(total_combat), average_hexa
 
 
+def calculate_party_ratio(member_ids, boss_name, difficulty):
+    total = 0.0
+    missing = 0
+    for cid in member_ids:
+        nickname = character_lookup[cid]["nickname"]
+        ratio = get_boss_ratio(nickname, boss_name, difficulty)
+        if ratio is None:
+            missing += 1
+        else:
+            total += float(ratio)
+    return total, missing
+
+
+def party_ratio_text(member_ids, boss_name, difficulty):
+    total, missing = calculate_party_ratio(member_ids, boss_name, difficulty)
+    result = format_ratio(total)
+    if missing:
+        result += f" · 미입력 {missing}명"
+    return result
+
+
+def render_party_summary(member_ids, boss_name, difficulty, title=""):
+    if not member_ids:
+        return
+    _, avg_hexa = calculate_party_stats(member_ids)
+    ratio_text = party_ratio_text(member_ids, boss_name, difficulty)
+    title_html = (
+        f'<div class="party-summary-title">{html.escape(title)}</div>'
+        if title else ""
+    )
+    summary_html = (
+        '<div class="party-summary-wrap">'
+        + title_html
+        + '<div class="party-summary-grid">'
+        + f'<div class="party-summary-item"><div class="party-summary-label">인원</div><div class="party-summary-value">{len(member_ids)}명</div></div>'
+        + f'<div class="party-summary-item"><div class="party-summary-label">평균 헥사환산</div><div class="party-summary-value">{html.escape(format_hexa(avg_hexa))}</div></div>'
+        + f'<div class="party-summary-item"><div class="party-summary-label">배율 합계</div><div class="party-summary-value">{html.escape(ratio_text)}</div></div>'
+        + '</div></div>'
+    )
+    st.markdown(summary_html, unsafe_allow_html=True)
+
+
 # =========================================================
 # 파티 SESSION
 # =========================================================
@@ -3441,14 +3483,15 @@ def build_final_text():
                 member = character_lookup[cid]
                 cooldown = format_cooldown(member.get("cooldown"))
                 names.append(member["nickname"] + (f" ({cooldown})" if cooldown else ""))
-            total_combat, avg_hexa = calculate_party_stats(members)
+            _, avg_hexa = calculate_party_stats(members)
+            ratio_text = party_ratio_text(members, boss_data["boss"], boss_data["difficulty"])
 
             lines.append(" - " + " / ".join(names))
             lines.append(
                 "   "
-                f"총 전투력 {format_combat_power(total_combat)}"
-                " | "
                 f"평균 헥사 {format_hexa(avg_hexa)}"
+                " | "
+                f"배율 합계 {ratio_text}"
             )
 
         lines.append("")
@@ -3521,12 +3564,13 @@ def make_party_image():
             member_text = " / ".join(names)
 
             wrapped_lines = wrap_names(member_text, member_font, usable_text_width)[:2]
-            total_combat, avg_hexa = calculate_party_stats(members)
+            _, avg_hexa = calculate_party_stats(members)
+            ratio_text = party_ratio_text(members, boss_data["boss"], boss_data["difficulty"])
 
             stat_text = (
-                f"총 전투력 {format_combat_power(total_combat)}"
-                "   ·   "
                 f"평균 헥사환산 {format_hexa(avg_hexa)}"
+                "   ·   "
+                f"배율 합계 {ratio_text}"
             )
 
             row_height = 72 if len(wrapped_lines) == 1 else 96
@@ -4243,6 +4287,20 @@ elif page == "📊 희망 보스 배율 입력":
 # 보스 파티 만들기
 # =========================================================
 elif page == "⚔️ 보스 파티 만들기":
+    st.markdown(
+        """
+<style>
+.party-summary-wrap { margin: 8px 0 14px 0; }
+.party-summary-title { color: #c9d9ee !important; font-size: .82rem; font-weight: 800; margin-bottom: 7px; }
+.party-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.party-summary-item { min-width: 0; }
+.party-summary-label { color: #9fb2cc !important; font-size: .80rem; font-weight: 700; margin-bottom: 4px; }
+.party-summary-value { color: #f6f8fe !important; -webkit-text-fill-color: #f6f8fe !important; font-size: 1.55rem; font-weight: 850; line-height: 1.15; }
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
     if "party_completed_message" in st.session_state:
         st.success(st.session_state["party_completed_message"])
         del st.session_state["party_completed_message"]
@@ -4347,6 +4405,32 @@ elif page == "⚔️ 보스 파티 만들기":
                     options=list(range(1, st.session_state.party_count + 1)),
                     format_func=lambda x: f"{x}파티",
                     key=f"hope_target_party_{st.session_state.party_count}",
+                )
+
+            current_target_members = list(st.session_state.get(f"party_members_{target_party}", []))
+            other_party_members_for_preview = set()
+            for preview_party_number in range(1, st.session_state.party_count + 1):
+                if preview_party_number == target_party:
+                    continue
+                other_party_members_for_preview.update(
+                    st.session_state.get(f"party_members_{preview_party_number}", [])
+                )
+
+            preview_addable = [
+                cid for cid in selected_hope_ids
+                if cid not in current_target_members
+                and cid not in other_party_members_for_preview
+            ]
+            preview_slots = max(0, 6 - len(current_target_members))
+            preview_added = preview_addable[:preview_slots]
+            projected_members = current_target_members + preview_added
+
+            if selected_hope_ids:
+                render_party_summary(
+                    projected_members,
+                    selected_boss,
+                    selected_difficulty,
+                    title=f"{target_party}파티에 추가 후 예상",
                 )
 
             with add_col2:
@@ -4461,16 +4545,11 @@ elif page == "⚔️ 보스 파티 만들기":
         selected_in_previous_parties.update(selected_members)
 
         if selected_members:
-            total_combat, avg_hexa = calculate_party_stats(selected_members)
-
-            m1, m2, m3 = st.columns(3)
-
-            with m1:
-                st.metric("인원", f"{len(selected_members)}명")
-            with m2:
-                st.metric("총 전투력", format_combat_power(total_combat))
-            with m3:
-                st.metric("평균 헥사환산", format_hexa(avg_hexa))
+            render_party_summary(
+                selected_members,
+                selected_boss,
+                selected_difficulty,
+            )
 
     st.write("")
 
@@ -4610,15 +4689,16 @@ elif page == "⚔️ 보스 파티 만들기":
                     label = member["nickname"] + (f" ({cooldown})" if cooldown else "")
                     names.append(html.escape(label))
 
-                total_combat, avg_hexa = calculate_party_stats(members)
+                _, avg_hexa = calculate_party_stats(members)
+                ratio_text = party_ratio_text(members, boss_data["boss"], boss_data["difficulty"])
 
                 final_parts.extend([
                     '<div class="final-party-line">',
                     " / ".join(names),
                     '<div class="final-party-stat">',
-                    f'총 전투력 {format_combat_power(total_combat)}',
-                    '&nbsp;&nbsp;·&nbsp;&nbsp;',
                     f'평균 헥사 {format_hexa(avg_hexa)}',
+                    '&nbsp;&nbsp;·&nbsp;&nbsp;',
+                    f'배율 합계 {html.escape(ratio_text)}',
                     '</div>',
                     '</div>',
                 ])
