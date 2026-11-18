@@ -3715,19 +3715,22 @@ if page == "👥 캐릭터 목록":
                             st.markdown(
                                 '<div class="custom-input-label">'
                                 '<span>DPS</span>'
-                                '<span class="custom-help-dot" data-help="환산사이트 DPS를 단위 없이 원본 숫자로 입력하세요. 예: 3152518610000">?</span>'
+                                '<span class="custom-help-dot" data-help="환산사이트에 표시된 DPS에서 조·억·만 단위 글자만 빼고 숫자만 이어서 입력하세요. 예: 3조 1525억 1861만 → 315251861">?</span>'
                                 '</div>',
                                 unsafe_allow_html=True,
                             )
+                            current_dps_raw = int(parse_number(current_spec.get("dps", 0)) or 0)
+                            current_dps_input = current_dps_raw // 10_000 if current_dps_raw > 0 else ""
                             dps_input = st.text_input(
                                 "DPS",
-                                value=str(current_spec.get("dps", 0) or ""),
+                                value=str(current_dps_input),
                                 key=f"manual_dps_{cid}",
                                 label_visibility="collapsed",
                             )
                             parsed_dps = parse_number(dps_input)
-                            if parsed_dps is not None:
-                                st.caption(f"표시: {int(parsed_dps):,} ({format_dps(parsed_dps)})")
+                            actual_dps = int(parsed_dps) * 10_000 if parsed_dps is not None else None
+                            if actual_dps is not None:
+                                st.caption(f"표시: {int(parsed_dps):,} → {format_dps(actual_dps)}")
 
                         with manual_col3:
                             current_cooldown = current_spec.get("cooldown")
@@ -3783,7 +3786,7 @@ if page == "👥 캐릭터 목록":
                                 try:
                                     save_spec = dict(latest_spec)
                                     save_spec["hexa"] = int(parsed_hexa)
-                                    save_spec["dps"] = int(parsed_dps)
+                                    save_spec["dps"] = int(actual_dps)
                                     save_spec["cooldown"] = parsed_cooldown
                                     apply_character_spec_update(nickname, save_spec)
                                     st.session_state["spec_update_preview"] = None
