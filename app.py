@@ -1870,6 +1870,40 @@ div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] input {
     opacity: 1 !important;
 }
 
+/* 입력 라벨 오른쪽 ? 도움말 아이콘은 라벨과 같은 밝은 색 */
+div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"],
+div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] *,
+div[class*="st-key-spec_update_box_"] button[aria-label*="help" i],
+div[class*="st-key-spec_update_box_"] button[aria-label*="help" i] *,
+div[class*="st-key-spec_update_box_"] button[aria-label*="도움" i],
+div[class*="st-key-spec_update_box_"] button[aria-label*="도움" i] * {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    fill: #f6f8fe !important;
+    stroke: #f6f8fe !important;
+    opacity: 1 !important;
+}
+
+/* ?를 눌렀을 때 나오는 도움말 팝업도 밝게 */
+div[data-baseweb="popover"] [role="tooltip"],
+div[data-baseweb="popover"] [role="tooltip"] *,
+div[role="tooltip"],
+div[role="tooltip"] * {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    opacity: 1 !important;
+}
+
+/* warning은 위의 강제 밝은 글자 규칙에서 제외하고 Streamlit 경고용 어두운 글자로 복원 */
+div[class*="st-key-spec_update_box_"] [data-testid="stAlertContainer"],
+div[class*="st-key-spec_update_box_"] [data-testid="stAlertContainer"] *,
+div[class*="st-key-spec_update_box_"] [data-testid="stAlert"],
+div[class*="st-key-spec_update_box_"] [data-testid="stAlert"] * {
+    color: #5f4510 !important;
+    -webkit-text-fill-color: #5f4510 !important;
+    opacity: 1 !important;
+}
+
 @media (max-width: 1000px) {
     .maple-logo {
         max-width: 145px;
