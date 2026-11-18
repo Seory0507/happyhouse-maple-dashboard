@@ -4063,6 +4063,20 @@ elif page == "📊 희망 보스 배율 입력":
         """
 <style>
 /* 희망 보스 배율 입력 페이지: 본문 정보는 밝게 유지 */
+.boss-ratio-character-title {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    font-size: 1.35rem;
+    font-weight: 900;
+    margin: 14px 0 8px 0;
+}
+.boss-ratio-boss-line {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    font-size: 1rem;
+    font-weight: 800;
+    padding-top: 8px;
+}
 .main .block-container [data-testid="stMarkdownContainer"] p,
 .main .block-container [data-testid="stMarkdownContainer"] span,
 .main .block-container [data-testid="stMarkdownContainer"] strong,
@@ -4164,7 +4178,10 @@ elif page == "📊 희망 보스 배율 입력":
                 if current_nickname is not None:
                     st.divider()
                 current_nickname = nickname
-                st.markdown(f"### {html.escape(nickname)}")
+                st.markdown(
+                    f'<div class="boss-ratio-character-title">{html.escape(nickname)}</div>',
+                    unsafe_allow_html=True,
+                )
 
                 boss_ratio_url = (
                     "https://maplescouter.com/ko/result?"
@@ -4179,7 +4196,10 @@ elif page == "📊 희망 보스 배율 입력":
             current_ratio = get_boss_ratio(nickname, boss, difficulty)
             c1, c2 = st.columns([2.2, 1])
             with c1:
-                st.write(f"**{difficulty} {boss}**")
+                st.markdown(
+                    f'<div class="boss-ratio-boss-line">{html.escape(difficulty)} {html.escape(boss)}</div>',
+                    unsafe_allow_html=True,
+                )
             with c2:
                 ratio_key = f"boss_ratio_input_{index}_{nickname}_{boss}_{difficulty}"
                 if ratio_key not in st.session_state:
