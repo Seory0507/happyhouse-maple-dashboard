@@ -1924,6 +1924,67 @@ div[class*="st-key-spec_update_box_"] [data-testid="stAlert"] * {
         transform: scale(1.15);
     }
 }
+
+
+/* ===== 스펙 업데이트 예외 색상 최종 보정 ===== */
+/* 도움말 ? 버튼: 밝은 원 안에 어두운 물음표가 또렷하게 보이게 */
+div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label button,
+div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] {
+    background: #f6f8fe !important;
+    border: 1px solid #d6e1ee !important;
+    border-radius: 999px !important;
+    color: #182230 !important;
+    -webkit-text-fill-color: #182230 !important;
+    opacity: 1 !important;
+}
+
+div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label button *,
+div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] * {
+    color: #182230 !important;
+    -webkit-text-fill-color: #182230 !important;
+    fill: #182230 !important;
+    stroke: #182230 !important;
+    opacity: 1 !important;
+}
+
+/* 경고 박스는 Streamlit 경고 톤처럼 어두운 글자로 복원 */
+div[class*="st-key-spec_update_box_"] [role="alert"],
+div[class*="st-key-spec_update_box_"] [role="alert"] *,
+div[class*="st-key-spec_update_box_"] [data-testid*="stAlert"],
+div[class*="st-key-spec_update_box_"] [data-testid*="stAlert"] *,
+div[class*="st-key-spec_update_box_"] [data-testid*="Alert"],
+div[class*="st-key-spec_update_box_"] [data-testid*="Alert"] * {
+    color: #5f4510 !important;
+    -webkit-text-fill-color: #5f4510 !important;
+    opacity: 1 !important;
+}
+
+/* 하단 버튼은 버튼 종류에 맞는 기본 대비로 복원 */
+div[class*="st-key-spec_update_box_"] button[data-testid="stBaseButton-secondary"],
+div[class*="st-key-spec_update_box_"] button[kind="secondary"] {
+    color: #182230 !important;
+    -webkit-text-fill-color: #182230 !important;
+}
+
+div[class*="st-key-spec_update_box_"] button[data-testid="stBaseButton-secondary"] *,
+div[class*="st-key-spec_update_box_"] button[kind="secondary"] * {
+    color: #182230 !important;
+    -webkit-text-fill-color: #182230 !important;
+    fill: #182230 !important;
+}
+
+div[class*="st-key-spec_update_box_"] button[data-testid="stBaseButton-primary"],
+div[class*="st-key-spec_update_box_"] button[kind="primary"] {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+}
+
+div[class*="st-key-spec_update_box_"] button[data-testid="stBaseButton-primary"] *,
+div[class*="st-key-spec_update_box_"] button[kind="primary"] * {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    fill: #f6f8fe !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
