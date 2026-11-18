@@ -63,6 +63,24 @@ BOSS_DIFFICULTIES = {
 }
 
 
+# 보스/난이도 표시 순서 공통 기준
+BOSS_ORDER = {boss: index for index, boss in enumerate(BOSS_DIFFICULTIES.keys())}
+DIFFICULTY_ORDER = {
+    boss: {difficulty: index for index, difficulty in enumerate(difficulties)}
+    for boss, difficulties in BOSS_DIFFICULTIES.items()
+}
+
+def boss_sort_key(boss, difficulty=""):
+    boss = clean(boss) if "clean" in globals() else str(boss).strip()
+    difficulty = clean(difficulty) if "clean" in globals() else str(difficulty).strip()
+    return (
+        BOSS_ORDER.get(boss, 9999),
+        DIFFICULTY_ORDER.get(boss, {}).get(difficulty, 9999),
+        boss,
+        difficulty,
+    )
+
+
 # =========================================================
 # 설정값
 # =========================================================
@@ -2364,6 +2382,11 @@ for _, hope_row in boss_hope_df.iterrows():
     )
 
 
+# 캐릭터 카드/배율 입력/파티 화면에서 희망 보스 순서를 동일하게 유지
+for _nickname, _hopes in boss_hope_lookup.items():
+    _hopes.sort(key=lambda hope: boss_sort_key(hope.get("보스", ""), hope.get("난이도", "")))
+
+
 # =========================================================
 # 보스 배율 LOOKUP
 # =========================================================
@@ -4034,6 +4057,40 @@ if page == "👥 캐릭터 목록":
 # 희망 보스 배율 입력
 # =========================================================
 elif page == "📊 희망 보스 배율 입력":
+    # 이 페이지에서만 어두운 배경 위 일반 텍스트를 밝게 표시한다.
+    # 입력칸 내부 글자색은 Streamlit 기본값을 유지한다.
+    st.markdown(
+        """
+<style>
+/* 희망 보스 배율 입력 페이지의 일반 텍스트 */
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] h1,
+[data-testid="stMarkdownContainer"] h2,
+[data-testid="stMarkdownContainer"] h3,
+[data-testid="stMarkdownContainer"] h4,
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+}
+
+/* 배율 입력 라벨/보조 텍스트 */
+[data-testid="stTextInput"] label,
+[data-testid="stTextInput"] label p {
+    color: #dce7f5 !important;
+    -webkit-text-fill-color: #dce7f5 !important;
+}
+
+/* 입력칸 안 숫자는 흰 배경에서 읽기 쉽도록 어둡게 유지 */
+[data-testid="stTextInput"] input {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
     st.markdown(
         """
 <div class="party-page-title">
@@ -4053,19 +4110,35 @@ elif page == "📊 희망 보스 배율 입력":
         if nickname:
             character_rows_by_nickname[nickname] = char_row
 
+    # df는 이미 현재 헥사환산 기준 순위순으로 정렬되어 있으므로
+    # 닉네임 순서도 캐릭터 목록의 순위와 정확히 맞춘다.
+    character_rank_order = {
+        clean(char_row.get("닉네임", "")): order
+        for order, (_, char_row) in enumerate(df.iterrows())
+        if clean(char_row.get("닉네임", ""))
+    }
+
     hope_rows = []
     seen_hope_keys = set()
-    for _, hope_row in boss_hope_df.iterrows():
-        nickname = clean(hope_row.get("닉네임", ""))
-        boss = clean(hope_row.get("보스", ""))
-        difficulty = clean(hope_row.get("난이도", ""))
-        if not nickname or not boss or not difficulty:
-            continue
-        key = (nickname, boss, difficulty)
-        if key in seen_hope_keys:
-            continue
-        seen_hope_keys.add(key)
-        hope_rows.append(key)
+    for nickname, hopes in boss_hope_lookup.items():
+        for hope in hopes:
+            boss = clean(hope.get("보스", ""))
+            difficulty = clean(hope.get("난이도", ""))
+            if not nickname or not boss or not difficulty:
+                continue
+            key = (nickname, boss, difficulty)
+            if key in seen_hope_keys:
+                continue
+            seen_hope_keys.add(key)
+            hope_rows.append(key)
+
+    hope_rows.sort(
+        key=lambda item: (
+            character_rank_order.get(item[0], 999999),
+            *boss_sort_key(item[1], item[2]),
+            item[0],
+        )
+    )
 
     if not hope_rows:
         st.info("등록된 희망 보스가 없습니다.")
