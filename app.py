@@ -2026,6 +2026,48 @@ div[class*="st-key-spec_update_box_"] button[kind="primary"] * {
 )
 
 
+
+
+# =========================================================
+# 보스 파티 만들기 화면 글자 대비 보정
+# =========================================================
+st.markdown(
+    """
+<style>
+/* 보스 파티 만들기 페이지의 입력 라벨 */
+div[data-testid="stSelectbox"] label p,
+div[data-testid="stNumberInput"] label p,
+div[data-testid="stMultiSelect"] label p {
+    color: #e7eef8 !important;
+    -webkit-text-fill-color: #e7eef8 !important;
+}
+
+/* Expander 제목 */
+div[data-testid="stExpander"] summary,
+div[data-testid="stExpander"] summary p,
+div[data-testid="stExpander"] summary span {
+    color: #e7eef8 !important;
+    -webkit-text-fill-color: #e7eef8 !important;
+}
+
+/* Expander 내부 일반 텍스트 */
+div[data-testid="stExpander"] [data-testid="stMarkdownContainer"] p,
+div[data-testid="stExpander"] [data-testid="stMarkdownContainer"] span,
+div[data-testid="stExpander"] [data-testid="stMarkdownContainer"] li {
+    color: #dce7f5 !important;
+    -webkit-text-fill-color: #dce7f5 !important;
+}
+
+/* 보스 파티 페이지의 일반 caption/보조 텍스트 */
+[data-testid="stCaptionContainer"] p {
+    color: #9fb2cc !important;
+    -webkit-text-fill-color: #9fb2cc !important;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 # =========================================================
 # HEADER
 # =========================================================
