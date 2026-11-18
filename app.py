@@ -211,21 +211,28 @@ def format_hexa(value):
 
 
 def format_dps(value):
+    """DPS는 시트에 환산사이트 표기의 단위 글자만 뺀 숫자로 저장한다.
+
+    예: 3조 1525억 1861만 -> 315251861 저장
+        화면 표시 시 실제값 3,152,518,610,000으로 환산해 3.1조로 표시한다.
+    """
     number = parse_number(value)
     if number is None:
         return clean(value)
 
-    number = int(number)
-    if number >= 1_000_000_000_000:
-        value = int((number / 1_000_000_000_000) * 10) / 10
-        return f"{value:.1f}조"
-    if number >= 100_000_000:
-        value = int((number / 100_000_000) * 10) / 10
-        return f"{value:.1f}억"
-    if number >= 10_000:
-        value = int((number / 10_000) * 10) / 10
-        return f"{value:.1f}만"
-    return f"{number:,}"
+    compact = int(number)
+    actual = compact * 10_000
+
+    if actual >= 1_000_000_000_000:
+        shown = int((actual / 1_000_000_000_000) * 10) / 10
+        return f"{shown:.1f}조"
+    if actual >= 100_000_000:
+        shown = int((actual / 100_000_000) * 10) / 10
+        return f"{shown:.1f}억"
+    if actual >= 10_000:
+        shown = int((actual / 10_000) * 10) / 10
+        return f"{shown:.1f}만"
+    return f"{actual:,}"
 
 
 def parse_cooldown(value):
@@ -3720,7 +3727,7 @@ if page == "👥 캐릭터 목록":
                                 unsafe_allow_html=True,
                             )
                             current_dps_raw = int(parse_number(current_spec.get("dps", 0)) or 0)
-                            current_dps_input = current_dps_raw // 10_000 if current_dps_raw > 0 else ""
+                            current_dps_input = current_dps_raw if current_dps_raw > 0 else ""
                             dps_input = st.text_input(
                                 "DPS",
                                 value=str(current_dps_input),
@@ -3728,7 +3735,7 @@ if page == "👥 캐릭터 목록":
                                 label_visibility="collapsed",
                             )
                             parsed_dps = parse_number(dps_input)
-                            actual_dps = int(parsed_dps) * 10_000 if parsed_dps is not None else None
+                            actual_dps = int(parsed_dps) if parsed_dps is not None else None
                             if actual_dps is not None:
                                 st.caption(f"표시: {int(parsed_dps):,} → {format_dps(actual_dps)}")
 
