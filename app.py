@@ -80,6 +80,7 @@ SHEET_NAME = get_config("SHEET_NAME", "캐릭터 목록")
 APP_PASSWORD = get_config("APP_PASSWORD")
 ADMIN_PASSWORD = get_config("ADMIN_PASSWORD")
 BOSS_HOPE_SHEET_NAME = "보스희망"
+BOSS_RATIO_SHEET_NAME = "보스배율"
 MAPLESCOUTER_PAGE_URL = "https://maplescouter.com/ko/info"
 NEXON_API_KEY = get_config("NEXON_API_KEY")
 NEXON_API_BASE = "https://open.api.nexon.com/maplestory/v1"
@@ -448,6 +449,11 @@ def get_spreadsheet():
 def get_boss_hope_worksheet():
     spreadsheet = get_spreadsheet()
     return spreadsheet.worksheet(BOSS_HOPE_SHEET_NAME)
+
+
+def get_boss_ratio_worksheet():
+    spreadsheet = get_spreadsheet()
+    return spreadsheet.worksheet(BOSS_RATIO_SHEET_NAME)
 
 
 def get_character_worksheet():
@@ -1174,6 +1180,103 @@ def load_boss_hope_data():
             df[col] = ""
 
     return df[required_columns]
+
+
+@st.cache_data(ttl=60)
+def load_boss_ratio_data():
+    worksheet = get_boss_ratio_worksheet()
+    records = worksheet.get_all_records()
+
+    if not records:
+        return pd.DataFrame(columns=["닉네임", "보스", "난이도", "배율"])
+
+    df = pd.DataFrame(records)
+    required_columns = ["닉네임", "보스", "난이도", "배율"]
+    for col in required_columns:
+        if col not in df.columns:
+            df[col] = ""
+
+    return df[required_columns]
+
+
+def parse_ratio(value):
+    text_value = clean(value).replace("%", "").replace(",", "").strip()
+    if not text_value:
+        return None
+    try:
+        number = float(text_value)
+        if number < 0:
+            return None
+        return number
+    except Exception:
+        return None
+
+
+def format_ratio(value):
+    number = parse_ratio(value)
+    if number is None:
+        return ""
+    if float(number).is_integer():
+        return f"{int(number)}%"
+    return f"{number:.1f}%"
+
+
+def save_boss_ratios(entries):
+    """닉네임+보스+난이도 조합으로 배율을 upsert한다. 빈 값은 기존 배율만 비운다."""
+    worksheet = get_boss_ratio_worksheet()
+    values = worksheet.get_all_values()
+
+    if not values:
+        worksheet.update("A1:D1", [["닉네임", "보스", "난이도", "배율"]])
+        values = [["닉네임", "보스", "난이도", "배율"]]
+
+    headers = [clean(v) for v in values[0]]
+    required = ["닉네임", "보스", "난이도", "배율"]
+    missing = [c for c in required if c not in headers]
+    if missing:
+        raise RuntimeError("보스배율 시트 헤더를 확인해주세요: " + ", ".join(missing))
+
+    idx = {name: headers.index(name) for name in required}
+    existing = {}
+    for row_no, row in enumerate(values[1:], start=2):
+        nickname = clean(row[idx["닉네임"]]) if idx["닉네임"] < len(row) else ""
+        boss = clean(row[idx["보스"]]) if idx["보스"] < len(row) else ""
+        difficulty = clean(row[idx["난이도"]]) if idx["난이도"] < len(row) else ""
+        if nickname and boss and difficulty:
+            existing[(nickname, boss, difficulty)] = row_no
+
+    updates = []
+    appends = []
+    ratio_col = _a1_col(idx["배율"] + 1)
+
+    for entry in entries:
+        nickname = clean(entry.get("닉네임", ""))
+        boss = clean(entry.get("보스", ""))
+        difficulty = clean(entry.get("난이도", ""))
+        raw_ratio = clean(entry.get("배율", ""))
+        ratio = parse_ratio(raw_ratio)
+        key = (nickname, boss, difficulty)
+        if not all(key):
+            continue
+
+        save_value = "" if not raw_ratio else (int(ratio) if ratio is not None and float(ratio).is_integer() else ratio)
+        if raw_ratio and ratio is None:
+            raise ValueError(f"{nickname} · {difficulty} {boss}의 배율은 숫자로 입력해주세요.")
+
+        if key in existing:
+            updates.append({
+                "range": f"{ratio_col}{existing[key]}",
+                "values": [[save_value]],
+            })
+        elif raw_ratio:
+            appends.append([nickname, boss, difficulty, save_value])
+
+    if updates:
+        worksheet.batch_update(updates, value_input_option="USER_ENTERED")
+    if appends:
+        worksheet.append_rows(appends, value_input_option="USER_ENTERED")
+
+    load_boss_ratio_data.clear()
 
 
 # =========================================================
@@ -2114,6 +2217,13 @@ except Exception as e:
     st.code(str(e))
     st.stop()
 
+try:
+    boss_ratio_df = load_boss_ratio_data()
+except Exception as e:
+    st.error("보스배율 시트를 불러오지 못했습니다.")
+    st.code(str(e))
+    st.stop()
+
 if df.empty:
     st.warning("등록된 캐릭터가 없습니다.")
     st.stop()
@@ -2252,6 +2362,23 @@ for _, hope_row in boss_hope_df.iterrows():
             "인원": int(people) if people is not None else 1,
         }
     )
+
+
+# =========================================================
+# 보스 배율 LOOKUP
+# =========================================================
+boss_ratio_lookup = {}
+for _, ratio_row in boss_ratio_df.iterrows():
+    nickname = clean(ratio_row.get("닉네임", ""))
+    boss = clean(ratio_row.get("보스", ""))
+    difficulty = clean(ratio_row.get("난이도", ""))
+    ratio = parse_ratio(ratio_row.get("배율", ""))
+    if nickname and boss and difficulty and ratio is not None:
+        boss_ratio_lookup[(nickname, boss, difficulty)] = ratio
+
+
+def get_boss_ratio(nickname, boss, difficulty):
+    return boss_ratio_lookup.get((clean(nickname), clean(boss), clean(difficulty)))
 
 
 # =========================================================
@@ -3092,8 +3219,12 @@ def render_hope_editor(cid, nickname):
 def character_option_text(cid):
     data = character_lookup[cid]
     cooldown = format_cooldown(data.get("cooldown"))
-    suffix = f" | 쿨뚝 {cooldown}" if cooldown else ""
-    return f"{data['nickname']} | {data['job']} | {data['server']} | {format_hexa(data['hexa'])}{suffix}"
+    cooldown_text = f" | 쿨뚝 {cooldown}" if cooldown else ""
+    boss = st.session_state.get("party_boss_name", "")
+    difficulty = st.session_state.get("party_boss_difficulty", "")
+    ratio = get_boss_ratio(data["nickname"], boss, difficulty)
+    ratio_text = f" | 배율 {format_ratio(ratio)}" if ratio is not None else " | 배율 미입력"
+    return f"{data['nickname']} | {data['job']} | {data['server']} | 헥사 {format_hexa(data['hexa'])}{cooldown_text}{ratio_text}"
 
 
 def get_boss_hope_candidates(boss_name, difficulty):
@@ -3130,19 +3261,31 @@ def get_boss_hope_candidates(boss_name, difficulty):
 def hope_candidate_text(candidate):
     cooldown = format_cooldown(candidate.get("cooldown"))
     cooldown_text = f" | 쿨뚝 {cooldown}" if cooldown else ""
+    ratio = get_boss_ratio(
+        candidate["nickname"],
+        st.session_state.get("party_boss_name", ""),
+        st.session_state.get("party_boss_difficulty", ""),
+    )
+    ratio_text = f" | 배율 {format_ratio(ratio)}" if ratio is not None else " | 배율 미입력"
     return (
         f"{candidate['nickname']} | {candidate['job']} | "
-        f"헥사 {format_hexa(candidate['hexa'])}{cooldown_text} | {candidate['people']}인 희망"
+        f"헥사 {format_hexa(candidate['hexa'])}{cooldown_text}{ratio_text} | {candidate['people']}인 희망"
     )
 
 
 def other_hope_text(candidate):
     cooldown = format_cooldown(candidate.get("cooldown"))
     cooldown_text = f" | 쿨뚝 {cooldown}" if cooldown else ""
+    ratio = get_boss_ratio(
+        candidate["nickname"],
+        st.session_state.get("party_boss_name", ""),
+        candidate["difficulty"],
+    )
+    ratio_text = f" | 배율 {format_ratio(ratio)}" if ratio is not None else " | 배율 미입력"
     return (
         f"{candidate['nickname']} | {candidate['job']} | "
         f"{candidate['difficulty']} · {candidate['people']}인 희망 | "
-        f"헥사 {format_hexa(candidate['hexa'])}{cooldown_text}"
+        f"헥사 {format_hexa(candidate['hexa'])}{cooldown_text}{ratio_text}"
     )
 
 
@@ -3548,6 +3691,16 @@ if st.sidebar.button(
     st.rerun()
 
 if st.sidebar.button(
+    "📊 희망 보스 배율 입력",
+    key="sidebar_boss_ratio_page",
+    use_container_width=True,
+    type="primary" if st.session_state["main_page"] == "📊 희망 보스 배율 입력" else "secondary",
+):
+    st.session_state["main_page"] = "📊 희망 보스 배율 입력"
+    st.session_state["show_page_settings"] = False
+    st.rerun()
+
+if st.sidebar.button(
     "⚔️ 보스 파티 만들기",
     key="sidebar_party_page",
     use_container_width=True,
@@ -3878,9 +4031,112 @@ if page == "👥 캐릭터 목록":
 
 
 # =========================================================
+# 희망 보스 배율 입력
+# =========================================================
+elif page == "📊 희망 보스 배율 입력":
+    st.markdown(
+        """
+<div class="party-page-title">
+📊 희망 보스 배율 입력
+</div>
+<div class="party-description">
+각 캐릭터가 희망한 보스의 배율을 입력하세요. 환산주스탯 페이지에서 확인한 숫자만 입력하면 됩니다.
+저장된 값은 보스 파티 만들기에서 자동으로 표시됩니다.
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    character_rows_by_nickname = {}
+    for _, char_row in df.iterrows():
+        nickname = clean(char_row.get("닉네임", ""))
+        if nickname:
+            character_rows_by_nickname[nickname] = char_row
+
+    hope_rows = []
+    seen_hope_keys = set()
+    for _, hope_row in boss_hope_df.iterrows():
+        nickname = clean(hope_row.get("닉네임", ""))
+        boss = clean(hope_row.get("보스", ""))
+        difficulty = clean(hope_row.get("난이도", ""))
+        if not nickname or not boss or not difficulty:
+            continue
+        key = (nickname, boss, difficulty)
+        if key in seen_hope_keys:
+            continue
+        seen_hope_keys.add(key)
+        hope_rows.append(key)
+
+    if not hope_rows:
+        st.info("등록된 희망 보스가 없습니다.")
+    else:
+        ratio_entries = []
+        current_nickname = None
+        for index, (nickname, boss, difficulty) in enumerate(hope_rows):
+            if nickname != current_nickname:
+                if current_nickname is not None:
+                    st.divider()
+                current_nickname = nickname
+                st.markdown(f"### {html.escape(nickname)}")
+
+                char_row = character_rows_by_nickname.get(nickname)
+                stat_url = get_stat_url(char_row) if char_row is not None else ""
+                if stat_url:
+                    st.link_button(
+                        "🔎 환산주스탯 열기",
+                        stat_url,
+                        use_container_width=False,
+                    )
+                else:
+                    st.caption("환산주스탯 URL이 등록되어 있지 않습니다.")
+
+            current_ratio = get_boss_ratio(nickname, boss, difficulty)
+            c1, c2 = st.columns([2.2, 1])
+            with c1:
+                st.write(f"**{difficulty} {boss}**")
+            with c2:
+                ratio_key = f"boss_ratio_input_{index}_{nickname}_{boss}_{difficulty}"
+                if ratio_key not in st.session_state:
+                    st.session_state[ratio_key] = (
+                        str(int(current_ratio))
+                        if current_ratio is not None and float(current_ratio).is_integer()
+                        else (str(current_ratio) if current_ratio is not None else "")
+                    )
+                ratio_value = st.text_input(
+                    "배율",
+                    key=ratio_key,
+                    placeholder="예: 145",
+                    label_visibility="collapsed",
+                )
+            ratio_entries.append({
+                "닉네임": nickname,
+                "보스": boss,
+                "난이도": difficulty,
+                "배율": ratio_value,
+            })
+
+        st.divider()
+        if st.button(
+            "💾 배율 저장",
+            type="primary",
+            use_container_width=True,
+            key="save_all_boss_ratios",
+        ):
+            try:
+                save_boss_ratios(ratio_entries)
+                st.session_state["boss_ratio_saved_message"] = "희망 보스 배율을 저장했습니다."
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
+
+    if st.session_state.get("boss_ratio_saved_message"):
+        st.success(st.session_state.pop("boss_ratio_saved_message"))
+
+
+# =========================================================
 # 보스 파티 만들기
 # =========================================================
-else:
+elif page == "⚔️ 보스 파티 만들기":
     if "party_completed_message" in st.session_state:
         st.success(st.session_state["party_completed_message"])
         del st.session_state["party_completed_message"]
