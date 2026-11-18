@@ -1927,35 +1927,35 @@ div[class*="st-key-spec_update_box_"] [data-testid="stAlert"] * {
 
 
 /* ===== 스펙 업데이트 예외 색상 최종 보정 ===== */
-/* 도움말 ? 버튼: 밝은 원 안에 어두운 물음표가 또렷하게 보이게 */
+/* 도움말 ? 버튼: 배경은 투명, 테두리와 물음표만 흰색 */
 div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label button,
 div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] {
-    background: #f6f8fe !important;
-    border: 1px solid #d6e1ee !important;
+    background: transparent !important;
+    border: 1px solid #f6f8fe !important;
     border-radius: 999px !important;
-    color: #182230 !important;
-    -webkit-text-fill-color: #182230 !important;
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
     opacity: 1 !important;
 }
 
 div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label button *,
 div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] * {
-    color: #182230 !important;
-    -webkit-text-fill-color: #182230 !important;
-    fill: #182230 !important;
-    stroke: #182230 !important;
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    fill: #f6f8fe !important;
+    stroke: #f6f8fe !important;
     opacity: 1 !important;
 }
 
-/* 경고 박스는 Streamlit 경고 톤처럼 어두운 글자로 복원 */
+/* 경고 박스 배경은 유지하고 안의 글자는 완전 검정색 */
 div[class*="st-key-spec_update_box_"] [role="alert"],
 div[class*="st-key-spec_update_box_"] [role="alert"] *,
 div[class*="st-key-spec_update_box_"] [data-testid*="stAlert"],
 div[class*="st-key-spec_update_box_"] [data-testid*="stAlert"] *,
 div[class*="st-key-spec_update_box_"] [data-testid*="Alert"],
 div[class*="st-key-spec_update_box_"] [data-testid*="Alert"] * {
-    color: #5f4510 !important;
-    -webkit-text-fill-color: #5f4510 !important;
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
     opacity: 1 !important;
 }
 
