@@ -1801,31 +1801,45 @@ div[data-testid="stExpander"] {
 }
 
 
-/* 서버별 보기 라디오 대비 개선 */
+/* 서버별 보기 라디오: 카드 수치와 같은 밝은 톤으로 강제 */
+div[data-testid="stRadio"] > label,
+div[data-testid="stRadio"] > label p,
+div[data-testid="stRadio"] div[role="radiogroup"] label,
+div[data-testid="stRadio"] div[role="radiogroup"] label *,
 div[role="radiogroup"] label,
-div[role="radiogroup"] label p,
-div[role="radiogroup"] span {
-    color: #dce7f5 !important;
+div[role="radiogroup"] label * {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    opacity: 1 !important;
 }
 
-div[role="radiogroup"] label:has(input:checked),
-div[role="radiogroup"] label:has(input:checked) p,
-div[role="radiogroup"] label:has(input:checked) span {
+div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked),
+div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) * {
     color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
     font-weight: 800 !important;
+    opacity: 1 !important;
 }
 
-/* 스펙 업데이트 비교 박스의 기본 Streamlit 텍스트 대비 개선 */
+/* 스펙 업데이트 비교 박스: 일반 글자를 전투력 숫자와 같은 밝은 색으로 강제 */
 div[data-testid="stVerticalBlockBorderWrapper"] p,
 div[data-testid="stVerticalBlockBorderWrapper"] span,
 div[data-testid="stVerticalBlockBorderWrapper"] label,
-div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stMarkdownContainer"] {
-    color: #e8f0fb !important;
+div[data-testid="stVerticalBlockBorderWrapper"] strong,
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stMarkdownContainer"],
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stMarkdownContainer"] * {
+    color: #f6f8fe !important;
+    -webkit-text-fill-color: #f6f8fe !important;
+    opacity: 1 !important;
 }
 
+/* 캡션만 한 톤 낮추되 충분히 밝게 */
 div[data-testid="stVerticalBlockBorderWrapper"] small,
-div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] {
-    color: #aebed2 !important;
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"],
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] * {
+    color: #c8d6e8 !important;
+    -webkit-text-fill-color: #c8d6e8 !important;
+    opacity: 1 !important;
 }
 
 @media (max-width: 1000px) {
