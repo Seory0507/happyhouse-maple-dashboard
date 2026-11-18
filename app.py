@@ -228,6 +228,26 @@ def format_dps(value):
     return f"{number:,}"
 
 
+def parse_cooldown(value):
+    """쿨뚝 초를 안전하게 정수로 읽는다. 빈칸/NaN은 None."""
+    number = parse_number(value)
+    if number is None:
+        return None
+    try:
+        seconds = int(number)
+    except Exception:
+        return None
+    return seconds if seconds >= 0 else None
+
+
+def format_cooldown(value, with_label=False):
+    seconds = parse_cooldown(value)
+    if seconds is None:
+        return ""
+    text = f"{seconds}초"
+    return f"쿨뚝 {text}" if with_label else text
+
+
 # =========================================================
 # 로컬 이미지
 # =========================================================
@@ -973,14 +993,14 @@ def _a1_col(col_num):
 
 
 def apply_character_spec_update(nickname, latest_spec):
-    """넥슨 자동값 + 직접 입력한 헥사환산/DPS를 저장하고 전체 순위를 다시 계산한다."""
+    """넥슨 자동값 + 직접 입력한 헥사환산/DPS/쿨뚝을 저장하고 전체 순위를 다시 계산한다."""
     worksheet = get_character_worksheet()
     values = worksheet.get_all_values()
     if not values:
         raise RuntimeError("캐릭터 목록 시트가 비어 있습니다.")
 
     headers = [clean(v) for v in values[0]]
-    required = ["닉네임", "레벨", "전투력", "헥사환산", "DPS", "순위"]
+    required = ["닉네임", "레벨", "전투력", "헥사환산", "DPS", "쿨뚝", "순위"]
     missing = [col for col in required if col not in headers]
     if missing:
         raise RuntimeError("캐릭터 목록 시트에 필요한 열이 없습니다: " + ", ".join(missing))
@@ -1003,6 +1023,7 @@ def apply_character_spec_update(nickname, latest_spec):
     combat = int(latest_spec["combat"])
     hexa = int(latest_spec["hexa"])
     dps = int(latest_spec["dps"])
+    cooldown = parse_cooldown(latest_spec.get("cooldown", ""))
     image_url = clean(latest_spec.get("image_url", ""))
 
     hexa_idx = col_index["헥사환산"] - 1
@@ -1024,6 +1045,7 @@ def apply_character_spec_update(nickname, latest_spec):
         {"range": f"{_a1_col(col_index['전투력'])}{target_row}", "values": [[combat]]},
         {"range": f"{_a1_col(col_index['헥사환산'])}{target_row}", "values": [[hexa]]},
         {"range": f"{_a1_col(col_index['DPS'])}{target_row}", "values": [[dps]]},
+        {"range": f"{_a1_col(col_index['쿨뚝'])}{target_row}", "values": [["" if cooldown is None else cooldown]]},
     ]
 
     if image_url and "대표이미지URL원본" in col_index:
@@ -1620,6 +1642,17 @@ st.markdown(
     font-weight: 750;
 }
 
+.cooldown-chip {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: rgba(82, 91, 140, .22);
+    border: 1px solid rgba(138, 151, 213, .30);
+    color: #d4dcff;
+    font-size: .74rem;
+    font-weight: 800;
+}
+
 .level {
     color: #ccd6e6;
     font-size: .95rem;
@@ -1767,6 +1800,34 @@ div[data-testid="stExpander"] {
     margin-top: 3px;
 }
 
+
+/* 서버별 보기 라디오 대비 개선 */
+div[role="radiogroup"] label,
+div[role="radiogroup"] label p,
+div[role="radiogroup"] span {
+    color: #dce7f5 !important;
+}
+
+div[role="radiogroup"] label:has(input:checked),
+div[role="radiogroup"] label:has(input:checked) p,
+div[role="radiogroup"] label:has(input:checked) span {
+    color: #ffffff !important;
+    font-weight: 800 !important;
+}
+
+/* 스펙 업데이트 비교 박스의 기본 Streamlit 텍스트 대비 개선 */
+div[data-testid="stVerticalBlockBorderWrapper"] p,
+div[data-testid="stVerticalBlockBorderWrapper"] span,
+div[data-testid="stVerticalBlockBorderWrapper"] label,
+div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stMarkdownContainer"] {
+    color: #e8f0fb !important;
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"] small,
+div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] {
+    color: #aebed2 !important;
+}
+
 @media (max-width: 1000px) {
     .maple-logo {
         max-width: 145px;
@@ -1871,6 +1932,7 @@ if spec_update_param:
                 "combat": int(parse_number(current_row.get("전투력", "")) or 0),
                 "hexa": int(parse_number(current_row.get("헥사환산", "")) or 0),
                 "dps": int(parse_number(current_row.get("DPS", "")) or 0),
+                "cooldown": parse_cooldown(current_row.get("쿨뚝", "")),
                 "image_url": clean(current_row.get("대표이미지URL원본", "")),
             }
 
@@ -1946,6 +2008,7 @@ for _, row in df.iterrows():
         "level": clean(row.get("레벨", "")),
         "combat": parse_number(row.get("전투력", "")) or 0,
         "hexa": parse_number(row.get("헥사환산", "")) or 0,
+        "cooldown": parse_cooldown(row.get("쿨뚝", "")),
     }
 
 all_character_ids = list(character_lookup.keys())
@@ -2082,6 +2145,7 @@ def build_card(row):
     combat_text = format_combat_power(row.get("전투력", ""))
     hexa_text = format_hexa(row.get("헥사환산", ""))
     dps_text = format_dps(row.get("DPS", ""))
+    cooldown_text = format_cooldown(row.get("쿨뚝", ""), with_label=True)
 
     # 최신 코디가 반영된 시트 URL을 우선 사용하고, 실패하면 로컬 이미지를 백업으로 사용
     image_url = clean(row.get("대표이미지URL원본", ""))
@@ -2127,6 +2191,10 @@ def build_card(row):
     if server:
         server_html = f'<span class="server-chip">{server}</span>'
 
+    cooldown_html = ""
+    if cooldown_text:
+        cooldown_html = f'<span class="cooldown-chip">⏱ {html.escape(cooldown_text)}</span>'
+
     hope_html = boss_hope_html(nickname_raw)
 
     return "".join([
@@ -2158,6 +2226,7 @@ def build_card(row):
         spec_change_html,
         stat_link_html,
         server_html,
+        cooldown_html,
         '</div>',
 
         '</div>',
@@ -2279,6 +2348,7 @@ def build_character_card_image(row):
     combat_text = format_combat_power(row.get("전투력", ""))
     hexa_text = format_hexa(row.get("헥사환산", ""))
     dps_text = format_dps(row.get("DPS", ""))
+    cooldown_text = format_cooldown(row.get("쿨뚝", ""), with_label=True)
 
     hopes = boss_hope_lookup.get(nickname, [])
     base_hexa = parse_number(row.get("헥사환산", ""))
@@ -2414,6 +2484,24 @@ def build_character_card_image(row):
             server,
             font=fonts["chip"],
             fill=(188, 211, 239, 255),
+        )
+
+    if cooldown_text:
+        cooldown_bbox = draw.textbbox((0, 0), cooldown_text, font=fonts["chip"])
+        cooldown_width = cooldown_bbox[2] - cooldown_bbox[0] + 24
+        cooldown_y = chip_top + 42
+        draw.rounded_rectangle(
+            [meta_x, cooldown_y, meta_x + cooldown_width, cooldown_y + 33],
+            radius=9,
+            fill=(45, 51, 83, 205),
+            outline=(112, 124, 183, 135),
+            width=1,
+        )
+        draw.text(
+            (meta_x + 12, cooldown_y + 6),
+            cooldown_text,
+            font=fonts["chip"],
+            fill=(213, 220, 255, 255),
         )
 
     stat_top = 278
@@ -2789,7 +2877,9 @@ def render_hope_editor(cid, nickname):
 # =========================================================
 def character_option_text(cid):
     data = character_lookup[cid]
-    return f"{data['nickname']} | {data['job']} | {data['server']} | {format_hexa(data['hexa'])}"
+    cooldown = format_cooldown(data.get("cooldown"))
+    suffix = f" | 쿨뚝 {cooldown}" if cooldown else ""
+    return f"{data['nickname']} | {data['job']} | {data['server']} | {format_hexa(data['hexa'])}{suffix}"
 
 
 def get_boss_hope_candidates(boss_name, difficulty):
@@ -2810,6 +2900,7 @@ def get_boss_hope_candidates(boss_name, difficulty):
                 "job": character["job"],
                 "server": character["server"],
                 "hexa": character["hexa"],
+                "cooldown": character.get("cooldown"),
                 "difficulty": clean(hope.get("난이도", "")),
                 "people": int(hope.get("인원", 1)),
             }
@@ -2823,17 +2914,21 @@ def get_boss_hope_candidates(boss_name, difficulty):
 
 
 def hope_candidate_text(candidate):
+    cooldown = format_cooldown(candidate.get("cooldown"))
+    cooldown_text = f" | 쿨뚝 {cooldown}" if cooldown else ""
     return (
         f"{candidate['nickname']} | {candidate['job']} | "
-        f"헥사 {format_hexa(candidate['hexa'])} | {candidate['people']}인 희망"
+        f"헥사 {format_hexa(candidate['hexa'])}{cooldown_text} | {candidate['people']}인 희망"
     )
 
 
 def other_hope_text(candidate):
+    cooldown = format_cooldown(candidate.get("cooldown"))
+    cooldown_text = f" | 쿨뚝 {cooldown}" if cooldown else ""
     return (
         f"{candidate['nickname']} | {candidate['job']} | "
         f"{candidate['difficulty']} · {candidate['people']}인 희망 | "
-        f"헥사 {format_hexa(candidate['hexa'])}"
+        f"헥사 {format_hexa(candidate['hexa'])}{cooldown_text}"
     )
 
 
@@ -2961,7 +3056,11 @@ def build_final_text():
             if not members:
                 continue
 
-            names = [character_lookup[cid]["nickname"] for cid in members]
+            names = []
+            for cid in members:
+                member = character_lookup[cid]
+                cooldown = format_cooldown(member.get("cooldown"))
+                names.append(member["nickname"] + (f" ({cooldown})" if cooldown else ""))
             total_combat, avg_hexa = calculate_party_stats(members)
 
             lines.append(" - " + " / ".join(names))
@@ -3034,7 +3133,11 @@ def make_party_image():
             if not members:
                 continue
 
-            names = [character_lookup[cid]["nickname"] for cid in members]
+            names = []
+            for cid in members:
+                member = character_lookup[cid]
+                cooldown = format_cooldown(member.get("cooldown"))
+                names.append(member["nickname"] + (f" ({cooldown})" if cooldown else ""))
             member_text = " / ".join(names)
 
             wrapped_lines = wrap_names(member_text, member_font, usable_text_width)[:2]
@@ -3387,7 +3490,7 @@ if page == "👥 캐릭터 목록":
 
                     with st.container(border=True):
                         st.markdown(f"**🔄 {nickname} 스펙 업데이트**")
-                        st.caption("레벨·전투력·코디는 넥슨 Open API에서 가져오고, 헥사환산과 DPS는 직접 입력합니다.")
+                        st.caption("레벨·전투력·코디는 넥슨 Open API에서 가져오고, 헥사환산·DPS·쿨뚝은 직접 입력합니다.")
 
                         h1, h2, h3 = st.columns([1.25, 1, 1])
                         with h1:
@@ -3421,7 +3524,7 @@ if page == "👥 캐릭터 목록":
                             st.caption("🧥 캐릭터 코디 이미지도 넥슨 최신 외형으로 갱신됩니다.")
 
                         st.divider()
-                        manual_col1, manual_col2 = st.columns(2)
+                        manual_col1, manual_col2, manual_col3 = st.columns(3)
                         with manual_col1:
                             hexa_input = st.text_input(
                                 "헥사환산",
@@ -3444,11 +3547,25 @@ if page == "👥 캐릭터 목록":
                             if parsed_dps is not None:
                                 st.caption(f"표시: {int(parsed_dps):,} ({format_dps(parsed_dps)})")
 
+                        with manual_col3:
+                            current_cooldown = current_spec.get("cooldown")
+                            cooldown_input = st.text_input(
+                                "쿨뚝",
+                                value="" if current_cooldown is None else str(current_cooldown),
+                                key=f"manual_cooldown_{cid}",
+                                help="쿨뚝 초를 숫자로 입력하세요. 예: 4. 없으면 비워두세요.",
+                            )
+                            parsed_cooldown = parse_cooldown(cooldown_input)
+                            if clean(cooldown_input) and parsed_cooldown is not None:
+                                st.caption(f"표시: 쿨뚝 {parsed_cooldown}초")
+
                         input_error = None
                         if parsed_hexa is None or int(parsed_hexa) <= 0:
                             input_error = "헥사환산을 숫자로 입력해주세요."
                         elif parsed_dps is None or int(parsed_dps) <= 0:
                             input_error = "DPS를 숫자로 입력해주세요."
+                        elif clean(cooldown_input) and parsed_cooldown is None:
+                            input_error = "쿨뚝은 초 숫자로 입력해주세요."
 
                         if input_error:
                             st.warning(input_error)
@@ -3475,10 +3592,11 @@ if page == "👥 캐릭터 목록":
                                     save_spec = dict(latest_spec)
                                     save_spec["hexa"] = int(parsed_hexa)
                                     save_spec["dps"] = int(parsed_dps)
+                                    save_spec["cooldown"] = parsed_cooldown
                                     apply_character_spec_update(nickname, save_spec)
                                     st.session_state["spec_update_preview"] = None
                                     st.session_state["spec_update_message"] = (
-                                        f"{nickname}의 레벨·전투력·코디·헥사환산·DPS를 업데이트했습니다."
+                                        f"{nickname}의 레벨·전투력·코디·헥사환산·DPS·쿨뚝을 업데이트했습니다."
                                     )
                                     st.rerun()
                                 except Exception as e:
@@ -3882,10 +4000,12 @@ else:
                 if not members:
                     continue
 
-                names = [
-                    html.escape(character_lookup[cid]["nickname"])
-                    for cid in members
-                ]
+                names = []
+                for cid in members:
+                    member = character_lookup[cid]
+                    cooldown = format_cooldown(member.get("cooldown"))
+                    label = member["nickname"] + (f" ({cooldown})" if cooldown else "")
+                    names.append(html.escape(label))
 
                 total_combat, avg_hexa = calculate_party_stats(members)
 
