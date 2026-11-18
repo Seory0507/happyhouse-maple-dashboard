@@ -1930,7 +1930,7 @@ div[class*="st-key-spec_update_box_"] [data-testid="stAlert"] * {
 /* 도움말 ? 버튼: 배경은 투명, 테두리와 물음표만 흰색 */
 div[class*="st-key-spec_update_box_"] [data-testid="stTextInput"] label button,
 div[class*="st-key-spec_update_box_"] [data-testid="stTooltipIcon"] {
-    background: transparent !important;
+    background: #101927 !important;
     border: 1px solid #f6f8fe !important;
     border-radius: 999px !important;
     color: #f6f8fe !important;
