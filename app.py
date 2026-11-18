@@ -151,10 +151,20 @@ def esc(value):
 
 def parse_number(value):
     try:
-        text = str(value).replace(",", "").strip()
-        if not text:
+        # Google Sheet/CSV의 빈 셀은 pandas에서 NaN으로 들어올 수 있다.
+        # NaN/inf를 숫자로 통과시키면 이후 int(NaN)에서 ValueError가 발생하므로
+        # 여기서 공통적으로 빈 값으로 처리한다.
+        if value is None or pd.isna(value):
             return None
-        return float(text)
+
+        text = str(value).replace(",", "").strip()
+        if not text or text.lower() in {"nan", "none", "null"}:
+            return None
+
+        number = float(text)
+        if pd.isna(number) or number == float("inf") or number == float("-inf"):
+            return None
+        return number
     except Exception:
         return None
 
