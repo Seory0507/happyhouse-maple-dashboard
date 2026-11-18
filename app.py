@@ -214,7 +214,7 @@ def format_dps(value):
     """DPS는 시트에 환산사이트 표기의 단위 글자만 뺀 숫자로 저장한다.
 
     예: 3조 1525억 1861만 -> 315251861 저장
-        화면 표시 시 실제값 3,152,518,610,000으로 환산해 3.1조로 표시한다.
+        화면에서는 항상 조 단위 한 자리로 표시한다. (예: 3.1조, 0.7조)
     """
     number = parse_number(value)
     if number is None:
@@ -222,17 +222,14 @@ def format_dps(value):
 
     compact = int(number)
     actual = compact * 10_000
+    if actual <= 0:
+        return "0.0조"
 
-    if actual >= 1_000_000_000_000:
-        shown = int((actual / 1_000_000_000_000) * 10) / 10
-        return f"{shown:.1f}조"
-    if actual >= 100_000_000:
-        shown = int((actual / 100_000_000) * 10) / 10
-        return f"{shown:.1f}억"
-    if actual >= 10_000:
-        shown = int((actual / 10_000) * 10) / 10
-        return f"{shown:.1f}만"
-    return f"{actual:,}"
+    jo_value = actual / 1_000_000_000_000
+    shown = int(jo_value * 10) / 10
+    if shown == 0 and jo_value > 0:
+        shown = 0.1
+    return f"{shown:.1f}조"
 
 
 def parse_cooldown(value):
