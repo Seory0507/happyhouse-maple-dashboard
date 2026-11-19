@@ -101,6 +101,7 @@ ADMIN_PASSWORD = get_config("ADMIN_PASSWORD")
 BOSS_HOPE_SHEET_NAME = "보스희망"
 BOSS_RATIO_SHEET_NAME = "보스배율"
 PARTY_SAVE_SHEET_NAME = "파티저장"
+PAGE_SETTINGS_SHEET_NAME = "페이지설정"
 MAPLESCOUTER_PAGE_URL = "https://maplescouter.com/ko/info"
 NEXON_API_KEY = get_config("NEXON_API_KEY")
 NEXON_API_BASE = "https://open.api.nexon.com/maplestory/v1"
@@ -491,6 +492,21 @@ def get_party_save_worksheet():
             "A1:F1",
             [["저장이름", "보스", "난이도", "파티번호", "파티원", "저장일시"]],
         )
+    return worksheet
+
+
+def get_page_settings_worksheet():
+    """페이지설정 탭이 없으면 자동 생성한다."""
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet(PAGE_SETTINGS_SHEET_NAME)
+    except gspread.exceptions.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(
+            title=PAGE_SETTINGS_SHEET_NAME,
+            rows=50,
+            cols=2,
+        )
+        worksheet.update("A1:B1", [["설정", "값"]])
     return worksheet
 
 
@@ -1318,6 +1334,49 @@ def save_boss_ratios(entries):
 
 
 # =========================================================
+# 페이지 설정 저장
+# =========================================================
+@st.cache_data(ttl=30)
+def load_page_settings():
+    worksheet = get_page_settings_worksheet()
+    records = worksheet.get_all_records()
+    result = {}
+    for row in records:
+        key = clean(row.get("설정", ""))
+        value = clean(row.get("값", ""))
+        if key:
+            result[key] = value
+    return result
+
+
+def save_page_setting(key, value):
+    key = clean(key)
+    value = clean(value)
+    if not key:
+        return
+    worksheet = get_page_settings_worksheet()
+    values = worksheet.get_all_values()
+    if not values:
+        worksheet.update("A1:B1", [["설정", "값"]])
+        values = [["설정", "값"]]
+    target_row = None
+    for row_no, row in enumerate(values[1:], start=2):
+        existing_key = clean(row[0]) if row else ""
+        if existing_key == key:
+            target_row = row_no
+            break
+    if target_row is None:
+        worksheet.append_row([key, value], value_input_option="USER_ENTERED")
+    else:
+        worksheet.update(f"B{target_row}", [[value]])
+    load_page_settings.clear()
+
+
+def get_representative_party_name():
+    return clean(load_page_settings().get("대표편성", ""))
+
+
+# =========================================================
 # 전체 파티 편성 저장 / 불러오기
 # =========================================================
 @st.cache_data(ttl=30)
@@ -1484,6 +1543,45 @@ def load_full_party_set(save_name):
         boss_data["parties"][party_number - 1] = member_ids
 
     return completed, missing_nicknames
+
+
+def build_representative_party_lookup(save_name):
+    """대표 편성 저장본에서 닉네임별 실제 파티 정보를 만든다."""
+    lookup = {}
+    save_name = clean(save_name)
+    if not save_name:
+        return lookup
+
+    saved_df = load_saved_party_data()
+    target = saved_df[
+        saved_df["저장이름"].fillna("").astype(str).str.strip() == save_name
+    ].copy()
+    if target.empty:
+        return lookup
+
+    for _, row in target.iterrows():
+        boss = clean(row.get("보스", ""))
+        difficulty = clean(row.get("난이도", ""))
+        party_number = int(parse_number(row.get("파티번호", "")) or 1)
+        raw_members = clean(row.get("파티원", ""))
+        try:
+            members = json.loads(raw_members) if raw_members else []
+            if not isinstance(members, list):
+                members = []
+        except Exception:
+            members = [name.strip() for name in raw_members.split(",") if name.strip()]
+
+        members = [clean(name) for name in members if clean(name)]
+        entry = {
+            "boss": boss,
+            "difficulty": difficulty,
+            "party_number": party_number,
+            "members": members,
+        }
+        for nickname in members:
+            lookup.setdefault(nickname, []).append(entry)
+
+    return lookup
 
 
 # =========================================================
@@ -2591,6 +2689,10 @@ for _, ratio_row in boss_ratio_df.iterrows():
 
 def get_boss_ratio(nickname, boss, difficulty):
     return boss_ratio_lookup.get((clean(nickname), clean(boss), clean(difficulty)))
+
+
+representative_party_name = get_representative_party_name()
+representative_party_lookup = build_representative_party_lookup(representative_party_name)
 
 
 # =========================================================
@@ -4091,6 +4193,35 @@ if st.session_state["show_page_settings"]:
             st.caption("앞으로 관리자 전용 기능은 이곳에 추가됩니다.")
 
             st.divider()
+            st.markdown("**⭐ 대표 편성 설정**")
+            st.caption("캐릭터 목록의 '같이 가는 파티'는 여기서 선택한 저장 편성을 기준으로 표시됩니다.")
+            try:
+                _saved_df = load_saved_party_data()
+                _saved_names = []
+                if not _saved_df.empty:
+                    for _value in _saved_df["저장이름"].tolist():
+                        _name = clean(_value)
+                        if _name and _name not in _saved_names:
+                            _saved_names.append(_name)
+                _current_rep = get_representative_party_name()
+                _options = ["(대표 편성 없음)"] + _saved_names
+                _default_idx = _options.index(_current_rep) if _current_rep in _options else 0
+                _selected_rep = st.selectbox(
+                    "대표 편성",
+                    options=_options,
+                    index=_default_idx,
+                    key="admin_representative_party_select",
+                )
+                if st.button("⭐ 대표 편성으로 지정", key="save_representative_party", use_container_width=True):
+                    _save_value = "" if _selected_rep == "(대표 편성 없음)" else _selected_rep
+                    save_page_setting("대표편성", _save_value)
+                    st.success("대표 편성을 저장했습니다." if _save_value else "대표 편성 지정을 해제했습니다.")
+                    st.rerun()
+            except Exception as e:
+                st.warning("대표 편성 설정을 불러오지 못했습니다.")
+                st.code(str(e))
+
+            st.divider()
             st.markdown("**🧪 넥슨 Open API 연결 테스트**")
             st.caption("닉네임으로 OCID를 찾은 뒤 레벨·전투력·캐릭터 이미지를 확인합니다.")
             test_nickname = st.text_input(
@@ -4360,6 +4491,35 @@ if page == "👥 캐릭터 목록":
                                 except Exception as e:
                                     st.error("스펙 업데이트에 실패했습니다.")
                                     st.code(f"{type(e).__name__}: {e}")
+
+                # 대표 편성 기준 같이 가는 파티
+                if representative_party_name:
+                    party_entries = representative_party_lookup.get(nickname, [])
+                    party_toggle_key = f"show_representative_party_{cid}"
+                    if party_toggle_key not in st.session_state:
+                        st.session_state[party_toggle_key] = False
+
+                    if st.button(
+                        "👥 같이 가는 파티 보기",
+                        key=f"toggle_representative_party_{cid}",
+                        use_container_width=True,
+                    ):
+                        st.session_state[party_toggle_key] = not st.session_state[party_toggle_key]
+                        st.rerun()
+
+                    if st.session_state.get(party_toggle_key):
+                        with st.container(border=True):
+                            st.caption(f"⭐ 대표 편성: {representative_party_name}")
+                            if party_entries:
+                                for party_entry in party_entries:
+                                    party_title = (
+                                        f"⚔️ {party_entry['difficulty']} {party_entry['boss']} · "
+                                        f"{party_entry['party_number']}파티"
+                                    )
+                                    st.markdown(f"**{party_title}**")
+                                    st.write(" / ".join(party_entry.get("members", [])))
+                            else:
+                                st.info("현재 대표 편성에는 이 캐릭터가 포함된 파티가 없습니다.")
 
                 button_col1, button_col2 = st.columns(2)
 
