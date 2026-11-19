@@ -1576,6 +1576,7 @@ def build_representative_party_lookup(save_name):
             "boss": boss,
             "difficulty": difficulty,
             "party_number": party_number,
+            "party_size": len(members),
             "members": members,
         }
         for nickname in members:
@@ -4509,17 +4510,36 @@ if page == "👥 캐릭터 목록":
 
                     if st.session_state.get(party_toggle_key):
                         with st.container(border=True):
-                            st.caption(f"⭐ 대표 편성: {representative_party_name}")
+                            st.markdown(
+                                f'<div style="color:#f6f8fe;font-weight:800;margin-bottom:10px;">'
+                                f'⭐ 대표 편성: {html.escape(representative_party_name)}'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
                             if party_entries:
                                 for party_entry in party_entries:
+                                    party_size = int(party_entry.get("party_size") or len(party_entry.get("members", [])))
                                     party_title = (
                                         f"⚔️ {party_entry['difficulty']} {party_entry['boss']} · "
-                                        f"{party_entry['party_number']}파티"
+                                        f"{party_size}인"
                                     )
-                                    st.markdown(f"**{party_title}**")
-                                    st.write(" / ".join(party_entry.get("members", [])))
+                                    member_text = " / ".join(party_entry.get("members", []))
+                                    st.markdown(
+                                        "".join([
+                                            '<div style="margin:8px 0 4px 0;color:#f6f8fe;font-weight:850;">',
+                                            html.escape(party_title),
+                                            '</div>',
+                                            '<div style="color:#dce7f5;margin-bottom:10px;">',
+                                            html.escape(member_text),
+                                            '</div>',
+                                        ]),
+                                        unsafe_allow_html=True,
+                                    )
                             else:
-                                st.info("현재 대표 편성에는 이 캐릭터가 포함된 파티가 없습니다.")
+                                st.markdown(
+                                    '<div style="color:#dce7f5;">현재 대표 편성에는 이 캐릭터가 포함된 파티가 없습니다.</div>',
+                                    unsafe_allow_html=True,
+                                )
 
                 button_col1, button_col2 = st.columns(2)
 
