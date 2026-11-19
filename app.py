@@ -5,6 +5,7 @@ import html
 import hmac
 import hashlib
 import time
+import json
 from datetime import datetime
 from io import BytesIO
 from zoneinfo import ZoneInfo
@@ -99,6 +100,7 @@ APP_PASSWORD = get_config("APP_PASSWORD")
 ADMIN_PASSWORD = get_config("ADMIN_PASSWORD")
 BOSS_HOPE_SHEET_NAME = "보스희망"
 BOSS_RATIO_SHEET_NAME = "보스배율"
+PARTY_SAVE_SHEET_NAME = "파티저장"
 MAPLESCOUTER_PAGE_URL = "https://maplescouter.com/ko/info"
 NEXON_API_KEY = get_config("NEXON_API_KEY")
 NEXON_API_BASE = "https://open.api.nexon.com/maplestory/v1"
@@ -472,6 +474,24 @@ def get_boss_hope_worksheet():
 def get_boss_ratio_worksheet():
     spreadsheet = get_spreadsheet()
     return spreadsheet.worksheet(BOSS_RATIO_SHEET_NAME)
+
+
+def get_party_save_worksheet():
+    """파티저장 탭이 없으면 자동 생성하고 헤더를 준비한다."""
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet(PARTY_SAVE_SHEET_NAME)
+    except gspread.exceptions.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(
+            title=PARTY_SAVE_SHEET_NAME,
+            rows=500,
+            cols=6,
+        )
+        worksheet.update(
+            "A1:F1",
+            [["저장이름", "보스", "난이도", "파티번호", "파티원", "저장일시"]],
+        )
+    return worksheet
 
 
 def get_character_worksheet():
@@ -1295,6 +1315,175 @@ def save_boss_ratios(entries):
         worksheet.append_rows(appends, value_input_option="USER_ENTERED")
 
     load_boss_ratio_data.clear()
+
+
+# =========================================================
+# 전체 파티 편성 저장 / 불러오기
+# =========================================================
+@st.cache_data(ttl=30)
+def load_saved_party_data():
+    worksheet = get_party_save_worksheet()
+    records = worksheet.get_all_records()
+    columns = ["저장이름", "보스", "난이도", "파티번호", "파티원", "저장일시"]
+    if not records:
+        return pd.DataFrame(columns=columns)
+
+    df_saved = pd.DataFrame(records)
+    for col in columns:
+        if col not in df_saved.columns:
+            df_saved[col] = ""
+    return df_saved[columns]
+
+
+def save_full_party_set(save_name, completed_bosses):
+    """현재 완료된 전체 보스 편성을 닉네임 구조만 저장한다. 같은 이름은 덮어쓴다."""
+    save_name = clean(save_name)
+    if not save_name:
+        raise ValueError("저장 이름을 입력해주세요.")
+    if not completed_bosses:
+        raise ValueError("저장할 완료된 보스 편성이 없습니다.")
+
+    worksheet = get_party_save_worksheet()
+    values = worksheet.get_all_values()
+    headers = [clean(v) for v in values[0]] if values else []
+    required = ["저장이름", "보스", "난이도", "파티번호", "파티원", "저장일시"]
+
+    if not values:
+        worksheet.update("A1:F1", [required])
+        values = [required]
+        headers = required
+
+    missing = [c for c in required if c not in headers]
+    if missing:
+        raise RuntimeError("파티저장 시트 헤더를 확인해주세요: " + ", ".join(missing))
+
+    save_name_idx = headers.index("저장이름")
+    rows_to_delete = []
+    for row_no, row in enumerate(values[1:], start=2):
+        existing_name = clean(row[save_name_idx]) if save_name_idx < len(row) else ""
+        if existing_name == save_name:
+            rows_to_delete.append(row_no)
+
+    for row_no in reversed(rows_to_delete):
+        worksheet.delete_rows(row_no)
+
+    saved_at = now_kst_text()
+    rows = []
+    for _, boss_data in completed_bosses.items():
+        boss = clean(boss_data.get("boss", ""))
+        difficulty = clean(boss_data.get("difficulty", ""))
+        parties = boss_data.get("parties", []) or []
+        party_count = int(boss_data.get("party_count", len(parties)) or len(parties) or 1)
+
+        # 빈 파티까지 포함해 파티 수/구조 자체를 보존한다.
+        for party_number in range(1, party_count + 1):
+            members = parties[party_number - 1] if party_number - 1 < len(parties) else []
+            nicknames = [
+                character_lookup[cid]["nickname"]
+                for cid in members
+                if cid in character_lookup
+            ]
+            rows.append([
+                save_name,
+                boss,
+                difficulty,
+                party_number,
+                json.dumps(nicknames, ensure_ascii=False),
+                saved_at,
+            ])
+
+    if rows:
+        worksheet.append_rows(rows, value_input_option="USER_ENTERED")
+
+    load_saved_party_data.clear()
+
+
+def delete_saved_party_set(save_name):
+    save_name = clean(save_name)
+    if not save_name:
+        return
+
+    worksheet = get_party_save_worksheet()
+    values = worksheet.get_all_values()
+    if not values:
+        return
+
+    headers = [clean(v) for v in values[0]]
+    if "저장이름" not in headers:
+        raise RuntimeError("파티저장 시트에 저장이름 열이 없습니다.")
+
+    idx = headers.index("저장이름")
+    rows_to_delete = []
+    for row_no, row in enumerate(values[1:], start=2):
+        value = clean(row[idx]) if idx < len(row) else ""
+        if value == save_name:
+            rows_to_delete.append(row_no)
+
+    for row_no in reversed(rows_to_delete):
+        worksheet.delete_rows(row_no)
+
+    load_saved_party_data.clear()
+
+
+def load_full_party_set(save_name):
+    """저장된 닉네임 구조를 현재 캐릭터 ID로 복원한다. 수치는 저장하지 않고 현재값을 사용한다."""
+    saved_df = load_saved_party_data()
+    save_name = clean(save_name)
+    target = saved_df[
+        saved_df["저장이름"].fillna("").astype(str).str.strip() == save_name
+    ].copy()
+    if target.empty:
+        raise ValueError("저장된 편성을 찾지 못했습니다.")
+
+    nickname_to_cid = {
+        clean(data.get("nickname", "")): cid
+        for cid, data in character_lookup.items()
+        if clean(data.get("nickname", ""))
+    }
+
+    completed = {}
+    missing_nicknames = []
+
+    for _, row in target.iterrows():
+        boss = clean(row.get("보스", ""))
+        difficulty = clean(row.get("난이도", ""))
+        party_number = int(parse_number(row.get("파티번호", "")) or 1)
+        display_name = f"{difficulty} {boss}"
+
+        raw_members = clean(row.get("파티원", ""))
+        try:
+            names = json.loads(raw_members) if raw_members else []
+            if not isinstance(names, list):
+                names = []
+        except Exception:
+            names = [name.strip() for name in raw_members.split(",") if name.strip()]
+
+        member_ids = []
+        for name in names:
+            nickname = clean(name)
+            cid = nickname_to_cid.get(nickname)
+            if cid is None:
+                if nickname and nickname not in missing_nicknames:
+                    missing_nicknames.append(nickname)
+                continue
+            member_ids.append(cid)
+
+        if display_name not in completed:
+            completed[display_name] = {
+                "boss": boss,
+                "difficulty": difficulty,
+                "display_name": display_name,
+                "party_count": party_number,
+                "parties": [],
+            }
+
+        boss_data = completed[display_name]
+        boss_data["party_count"] = max(int(boss_data.get("party_count", 1)), party_number)
+        while len(boss_data["parties"]) < party_number:
+            boss_data["parties"].append([])
+        boss_data["parties"][party_number - 1] = member_ids
+
+    return completed, missing_nicknames
 
 
 # =========================================================
@@ -3478,11 +3667,11 @@ def build_final_text():
             if not members:
                 continue
 
-            names = []
-            for cid in members:
-                member = character_lookup[cid]
-                cooldown = format_cooldown(member.get("cooldown"))
-                names.append(member["nickname"] + (f" ({cooldown})" if cooldown else ""))
+            names = [
+                character_lookup[cid]["nickname"]
+                for cid in members
+                if cid in character_lookup
+            ]
             _, avg_hexa = calculate_party_stats(members)
             ratio_text = party_ratio_text(members, boss_data["boss"], boss_data["difficulty"])
 
@@ -3556,11 +3745,11 @@ def make_party_image():
             if not members:
                 continue
 
-            names = []
-            for cid in members:
-                member = character_lookup[cid]
-                cooldown = format_cooldown(member.get("cooldown"))
-                names.append(member["nickname"] + (f" ({cooldown})" if cooldown else ""))
+            names = [
+                character_lookup[cid]["nickname"]
+                for cid in members
+                if cid in character_lookup
+            ]
             member_text = " / ".join(names)
 
             wrapped_lines = wrap_names(member_text, member_font, usable_text_width)[:2]
@@ -4319,6 +4508,85 @@ elif page == "⚔️ 보스 파티 만들기":
         unsafe_allow_html=True,
     )
 
+    # ---------------------------------------------------------
+    # 전체 편성 저장 / 불러오기
+    # ---------------------------------------------------------
+    st.markdown(
+        '<div class="party-section-title">💾 전체 편성 저장 / 불러오기</div>',
+        unsafe_allow_html=True,
+    )
+
+    try:
+        saved_party_df = load_saved_party_data()
+        saved_names = []
+        if not saved_party_df.empty:
+            for value in saved_party_df["저장이름"].tolist():
+                value = clean(value)
+                if value and value not in saved_names:
+                    saved_names.append(value)
+
+        if saved_names:
+            selected_saved_name = st.selectbox(
+                "저장된 편성",
+                options=saved_names,
+                key="saved_party_select",
+            )
+            load_col, delete_col = st.columns(2)
+            with load_col:
+                if st.button(
+                    "📂 선택한 편성 불러오기",
+                    key="load_saved_party_set",
+                    use_container_width=True,
+                ):
+                    loaded_completed, missing_names = load_full_party_set(selected_saved_name)
+                    st.session_state.completed_bosses = loaded_completed
+                    st.session_state["show_final_result"] = True
+                    st.session_state["pending_clear_party_editor"] = True
+                    st.session_state["party_completed_message"] = f"{selected_saved_name} 편성을 불러왔습니다. 현재 헥사환산·배율 기준으로 다시 계산합니다."
+                    if missing_names:
+                        st.session_state["saved_party_missing_message"] = (
+                            "현재 캐릭터 목록에서 찾지 못해 제외된 캐릭터: " + ", ".join(missing_names)
+                        )
+                    st.rerun()
+            with delete_col:
+                if st.button(
+                    "🗑️ 선택한 저장본 삭제",
+                    key="delete_saved_party_set",
+                    use_container_width=True,
+                ):
+                    delete_saved_party_set(selected_saved_name)
+                    st.session_state["party_completed_message"] = f"{selected_saved_name} 저장본을 삭제했습니다."
+                    st.rerun()
+        else:
+            st.caption("아직 저장된 전체 편성이 없습니다.")
+
+        save_name = st.text_input(
+            "저장 이름",
+            key="party_save_name",
+            placeholder="예: 11월 4주차 보스 편성",
+        )
+        if st.button(
+            "💾 현재 완료된 전체 편성 저장",
+            key="save_full_party_set_button",
+            use_container_width=True,
+        ):
+            try:
+                save_full_party_set(save_name, st.session_state.completed_bosses)
+                st.session_state["party_completed_message"] = f"{clean(save_name)} 이름으로 전체 편성을 저장했습니다."
+                st.rerun()
+            except Exception as e:
+                st.warning(str(e))
+
+    except Exception as e:
+        st.error("파티 저장 기능을 준비하지 못했습니다.")
+        st.code(str(e))
+
+    if st.session_state.get("saved_party_missing_message"):
+        st.warning(st.session_state["saved_party_missing_message"])
+        del st.session_state["saved_party_missing_message"]
+
+    st.divider()
+
     boss_col, difficulty_col, count_col = st.columns([2, 1, 1])
 
     with boss_col:
@@ -4682,12 +4950,11 @@ elif page == "⚔️ 보스 파티 만들기":
                 if not members:
                     continue
 
-                names = []
-                for cid in members:
-                    member = character_lookup[cid]
-                    cooldown = format_cooldown(member.get("cooldown"))
-                    label = member["nickname"] + (f" ({cooldown})" if cooldown else "")
-                    names.append(html.escape(label))
+                names = [
+                    html.escape(character_lookup[cid]["nickname"])
+                    for cid in members
+                    if cid in character_lookup
+                ]
 
                 _, avg_hexa = calculate_party_stats(members)
                 ratio_text = party_ratio_text(members, boss_data["boss"], boss_data["difficulty"])
