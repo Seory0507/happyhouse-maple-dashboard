@@ -3944,6 +3944,92 @@ if st.session_state.get("boss_hope_saved_message"):
 
 
 # =========================================================
+# 전체 편성 저장 / 불러오기 팝업
+# =========================================================
+@st.dialog("💾 저장/불러오기", width="large")
+def party_save_load_dialog():
+    try:
+        saved_party_df = load_saved_party_data()
+        saved_names = []
+        if not saved_party_df.empty:
+            for value in saved_party_df["저장이름"].tolist():
+                value = clean(value)
+                if value and value not in saved_names:
+                    saved_names.append(value)
+
+        st.markdown("#### 📂 저장된 편성")
+        if saved_names:
+            selected_saved_name = st.selectbox(
+                "저장된 편성",
+                options=saved_names,
+                key="saved_party_select_dialog",
+                label_visibility="collapsed",
+            )
+
+            load_col, delete_col = st.columns(2)
+            with load_col:
+                if st.button(
+                    "📂 선택한 편성 불러오기",
+                    key="load_saved_party_set_dialog",
+                    use_container_width=True,
+                ):
+                    loaded_completed, missing_names = load_full_party_set(selected_saved_name)
+                    st.session_state.completed_bosses = loaded_completed
+                    st.session_state["show_final_result"] = True
+                    st.session_state["pending_clear_party_editor"] = True
+                    st.session_state["party_completed_message"] = (
+                        f"{selected_saved_name} 편성을 불러왔습니다. "
+                        "현재 헥사환산·배율 기준으로 다시 계산합니다."
+                    )
+                    if missing_names:
+                        st.session_state["saved_party_missing_message"] = (
+                            "현재 캐릭터 목록에서 찾지 못해 제외된 캐릭터: "
+                            + ", ".join(missing_names)
+                        )
+                    st.rerun()
+
+            with delete_col:
+                if st.button(
+                    "🗑️ 선택한 저장본 삭제",
+                    key="delete_saved_party_set_dialog",
+                    use_container_width=True,
+                ):
+                    delete_saved_party_set(selected_saved_name)
+                    st.session_state["party_completed_message"] = (
+                        f"{selected_saved_name} 저장본을 삭제했습니다."
+                    )
+                    st.rerun()
+        else:
+            st.caption("아직 저장된 전체 편성이 없습니다.")
+
+        st.divider()
+        st.markdown("#### 💾 현재 편성 저장")
+        save_name = st.text_input(
+            "저장 이름",
+            key="party_save_name_dialog",
+            placeholder="예: 11월 4주차 보스 편성",
+        )
+        if st.button(
+            "💾 현재 완료된 전체 편성 저장",
+            key="save_full_party_set_button_dialog",
+            use_container_width=True,
+            type="primary",
+        ):
+            try:
+                save_full_party_set(save_name, st.session_state.completed_bosses)
+                st.session_state["party_completed_message"] = (
+                    f"{clean(save_name)} 이름으로 전체 편성을 저장했습니다."
+                )
+                st.rerun()
+            except Exception as e:
+                st.warning(str(e))
+
+    except Exception as e:
+        st.error("파티 저장 기능을 준비하지 못했습니다.")
+        st.code(str(e))
+
+
+# =========================================================
 # 사이드바 메뉴 / 페이지 설정
 # =========================================================
 if "main_page" not in st.session_state:
@@ -4531,77 +4617,13 @@ elif page == "⚔️ 보스 파티 만들기":
     )
 
     # ---------------------------------------------------------
-    # 전체 편성 저장 / 불러오기
+    # 전체 편성 저장 / 불러오기 - 팝업
     # ---------------------------------------------------------
-    st.markdown(
-        '<div class="party-section-title">💾 전체 편성 저장 / 불러오기</div>',
-        unsafe_allow_html=True,
-    )
-
-    try:
-        saved_party_df = load_saved_party_data()
-        saved_names = []
-        if not saved_party_df.empty:
-            for value in saved_party_df["저장이름"].tolist():
-                value = clean(value)
-                if value and value not in saved_names:
-                    saved_names.append(value)
-
-        if saved_names:
-            selected_saved_name = st.selectbox(
-                "저장된 편성",
-                options=saved_names,
-                key="saved_party_select",
-            )
-            load_col, delete_col = st.columns(2)
-            with load_col:
-                if st.button(
-                    "📂 선택한 편성 불러오기",
-                    key="load_saved_party_set",
-                    use_container_width=True,
-                ):
-                    loaded_completed, missing_names = load_full_party_set(selected_saved_name)
-                    st.session_state.completed_bosses = loaded_completed
-                    st.session_state["show_final_result"] = True
-                    st.session_state["pending_clear_party_editor"] = True
-                    st.session_state["party_completed_message"] = f"{selected_saved_name} 편성을 불러왔습니다. 현재 헥사환산·배율 기준으로 다시 계산합니다."
-                    if missing_names:
-                        st.session_state["saved_party_missing_message"] = (
-                            "현재 캐릭터 목록에서 찾지 못해 제외된 캐릭터: " + ", ".join(missing_names)
-                        )
-                    st.rerun()
-            with delete_col:
-                if st.button(
-                    "🗑️ 선택한 저장본 삭제",
-                    key="delete_saved_party_set",
-                    use_container_width=True,
-                ):
-                    delete_saved_party_set(selected_saved_name)
-                    st.session_state["party_completed_message"] = f"{selected_saved_name} 저장본을 삭제했습니다."
-                    st.rerun()
-        else:
-            st.caption("아직 저장된 전체 편성이 없습니다.")
-
-        save_name = st.text_input(
-            "저장 이름",
-            key="party_save_name",
-            placeholder="예: 11월 4주차 보스 편성",
-        )
-        if st.button(
-            "💾 현재 완료된 전체 편성 저장",
-            key="save_full_party_set_button",
-            use_container_width=True,
-        ):
-            try:
-                save_full_party_set(save_name, st.session_state.completed_bosses)
-                st.session_state["party_completed_message"] = f"{clean(save_name)} 이름으로 전체 편성을 저장했습니다."
-                st.rerun()
-            except Exception as e:
-                st.warning(str(e))
-
-    except Exception as e:
-        st.error("파티 저장 기능을 준비하지 못했습니다.")
-        st.code(str(e))
+    if st.button(
+        "💾 저장/불러오기",
+        key="open_party_save_dialog",
+    ):
+        party_save_load_dialog()
 
     if st.session_state.get("saved_party_missing_message"):
         st.warning(st.session_state["saved_party_missing_message"])
