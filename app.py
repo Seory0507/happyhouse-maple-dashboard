@@ -3650,6 +3650,28 @@ def save_current_boss():
     return True, display_name
 
 
+
+
+def move_completed_boss(display_name, direction):
+    """완료된 보스 편성의 표시/저장 순서를 위아래로 이동한다."""
+    items = list(st.session_state.completed_bosses.items())
+    current_index = next(
+        (i for i, (name, _) in enumerate(items) if name == display_name),
+        None,
+    )
+    if current_index is None:
+        return False
+
+    target_index = current_index + direction
+    if target_index < 0 or target_index >= len(items):
+        return False
+
+    items[current_index], items[target_index] = items[target_index], items[current_index]
+    st.session_state.completed_bosses = dict(items)
+    st.session_state["show_final_result"] = False
+    return True
+
+
 # =========================================================
 # 최종 텍스트
 # =========================================================
@@ -4894,9 +4916,29 @@ elif page == "⚔️ 보스 파티 만들기":
 
             st.markdown(completed_html, unsafe_allow_html=True)
 
-            c1, c2 = st.columns(2)
+            move_up_col, move_down_col, load_col, delete_col = st.columns([0.8, 0.8, 1.8, 1.4])
 
-            with c1:
+            with move_up_col:
+                if st.button(
+                    "⬆️ 위로",
+                    key=f"move_boss_up_{index}_{display_name}",
+                    use_container_width=True,
+                    disabled=(index == 0),
+                ):
+                    if move_completed_boss(display_name, -1):
+                        st.rerun()
+
+            with move_down_col:
+                if st.button(
+                    "⬇️ 아래로",
+                    key=f"move_boss_down_{index}_{display_name}",
+                    use_container_width=True,
+                    disabled=(index == len(completed_items) - 1),
+                ):
+                    if move_completed_boss(display_name, 1):
+                        st.rerun()
+
+            with load_col:
                 if st.button(
                     "✏️ 불러오기 / 수정",
                     key=f"load_boss_{index}",
@@ -4905,7 +4947,7 @@ elif page == "⚔️ 보스 파티 만들기":
                     st.session_state["pending_load_boss"] = display_name
                     st.rerun()
 
-            with c2:
+            with delete_col:
                 if st.button(
                     "🗑️ 삭제",
                     key=f"delete_boss_{index}",
